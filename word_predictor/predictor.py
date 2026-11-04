@@ -121,10 +121,10 @@ class Predictor:
         for w in user.prefixed(pre, CANDIDATES):
             cands.setdefault(w, lm.id.get(w))
 
-        blocked = () if self.allow_blocked else lm.blocked
+        hidden = lm.misspelled if self.allow_blocked else lm.hidden
         scored, extra = [], 0.0
         for w, i in cands.items():
-            if i is not None and i in blocked:
+            if i is not None and i in hidden:
                 continue
             p = 0.0
             if lc:

@@ -283,6 +283,17 @@ MAX_WORD_LEN = 24
 CASE_SHARE = 0.6          # min share of non-sentence-initial occurrences for a cased form to become the usual form
 BLOCKLIST_URL = ("https://raw.githubusercontent.com/LDNOOBW/"
                  "List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en")
+# Spelling dictionary: plain word lists generated from the English Speller Database (ESDB, formerly SCOWL),
+# pinned to a commit of en-wl/wordlist-diff.
+SPELL_URL = "https://raw.githubusercontent.com/en-wl/wordlist-diff/7f2f4078354752045ee16a041605686561122185/{}.txt"
+SPELL_LISTS = ("en_US-large", "en_GB-large", "en_CA-large")
+MISSPELL_RATIO = 20       # how much more common a dictionary word must be to explain a nearby non-dictionary word
+# Internet abbreviations and informal spellings that are not misspellings even when the dictionary lacks them.
+SLANG = frozenset("""lol lmao lmfao rofl omg omfg idk idc idek tbh tbf ngl imo imho btw brb lmk smh irl ikr jk fyi
+    afaik iirc fwiw ttyl gtg np thx ty tysm pls plz u ur ya yea yeah yep yup nah nope naw haha hahaha hehe bruh kinda
+    sorta gonna wanna gotta lemme gimme dunno cuz tho rn ok okay yay ugh meh hmm hmmm uh um umm oops tldr dm dms asap
+    aka xd fr nvm wyd hbu wbu ily ofc rly srsly thanx thnx boi fav favs pic pics vid vids convo bday bff gf bf obv bc
+    abt msg txt ppl""".split())
 _TID = {}
 
 
@@ -428,6 +439,64 @@ def load_blocklist():
     return {w.strip().lower() for w in path.read_text(encoding="utf-8").splitlines() if w.strip() and " " not in w}
 
 
+def load_dictionary():
+    """Lowercased union of the American, British and Canadian speller word lists."""
+    import urllib.request
+
+    words = set()
+    for name in SPELL_LISTS:
+        path = ROOT / "data" / "spell" / f"{name}.txt"
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            urllib.request.urlretrieve(SPELL_URL.format(name), path)
+        words.update(w.lower() for w in path.read_text(encoding="utf-8").split())
+    return words
+
+
+def _deletes(word, k):
+    out = frontier = {word}
+    for _ in range(k):
+        frontier = {w[:i] + w[i + 1:] for w in frontier for i in range(len(w))}
+        out = out | frontier
+    return out
+
+
+def _osa(a, b):
+    """Optimal string alignment distance: insertions, deletions, substitutions and adjacent transpositions."""
+    prev2, prev = None, list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] != b[j - 1]))
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        prev2, prev = prev, cur
+    return prev[-1]
+
+
+def misspellings(words, counts, cased, dictionary):
+    """Ids of vocabulary words that are likely misspellings: not in the dictionary or SLANG, usually written in
+    lowercase (capitalized words are mostly names), and one edit (two for words of 8+ letters) away from a
+    dictionary word that is at least MISSPELL_RATIO times as common. They stay in the model as context but are
+    never suggested. Candidates are found with symmetric deletes and checked with _osa."""
+    valid = [w in dictionary or w in SLANG for w in words]
+    index = {}
+    for i, w in enumerate(words):
+        if valid[i]:
+            for d in _deletes(w, 2):
+                index.setdefault(d, []).append(i)
+    out = []
+    for i, w in enumerate(words):
+        if valid[i] or i in cased:
+            continue
+        k = 2 if len(w) >= 8 else 1
+        limit = MISSPELL_RATIO * counts[w]
+        if any(counts[words[j]] >= limit and _osa(w, words[j]) <= k
+               for d in _deletes(w, k) for j in index.get(d, ())):
+            out.append(i)
+    return out
+
+
 def build_model(out, budget, min_count, workers):
     import numpy as np
     from multiprocessing import Pool
@@ -493,6 +562,8 @@ def build_model(out, budget, min_count, workers):
     forms = dict(forms) | i_id
     case_blob = "".join(f"{i}\t{f}\n" for i, f in sorted(forms.items()))
     blocked = sorted(tid[x] for x in load_blocklist() if x in tid and tid[x] < W)
+    misspelled = misspellings(words, tok, set(forms), load_dictionary())
+    print(f"Spelling: {len(misspelled):,} likely misspellings will not be suggested, {time.time() - t0:.0f} s")
 
     # Pruning: score every entry by weighted difference and pick one threshold theta so the file just fits the budget.
     # Size: 3 bytes per entry, 9 bytes per trigram context (key, offset, backoff weight), everything else is fixed.
@@ -504,7 +575,8 @@ def build_model(out, budget, min_count, workers):
     srt2, srt3, srtc = np.sort(s2), np.sort(s3), np.sort(np.maximum.reduceat(s3, starts))
     del ctx3, starts
     at_least = lambda s, x: len(s) - int(np.searchsorted(s, x))  # noqa: E731
-    fixed = len(vocab_blob.encode()) + W + len(case_blob.encode()) + 2 * len(blocked) + 5 * V + 2048
+    fixed = (len(vocab_blob.encode()) + W + len(case_blob.encode()) + 2 * (len(blocked) + len(misspelled))
+             + 5 * V + 2048)
 
     def size(x):
         return fixed + 3 * at_least(srt2, x) + 3 * at_least(srt3, x) + 9 * at_least(srtc, x)
@@ -517,7 +589,7 @@ def build_model(out, budget, min_count, workers):
         theta = hi
         L2 = kn_level(kc2, cc2, V, is_word, s2 >= theta)
         L3 = kn_level(k3, c3, V, is_word, s3 >= theta)
-        sections = export_sections(L2, L3, V, vocab_blob, case_blob, blocked, quant(p1[:W]))
+        sections = export_sections(L2, L3, V, vocab_blob, case_blob, blocked, misspelled, quant(p1[:W]))
         total = 12 + 2048 + sum(12 + len(d) for _, d in sections.values())
         if total <= budget:
             break
@@ -533,10 +605,10 @@ def build_model(out, budget, min_count, workers):
     }
     write_model(out, meta, sections)
     print(f"Wrote {out}: {out.stat().st_size / 1e6:.2f} MB ({len(forms):,} cased forms, "
-          f"{len(blocked)} blocked words), {time.time() - t0:.0f} s total")
+          f"{len(blocked)} blocked words, {len(misspelled):,} misspellings), {time.time() - t0:.0f} s total")
 
 
-def export_sections(L2, L3, V, vocab_blob, case_blob, blocked, unigram):
+def export_sections(L2, L3, V, vocab_blob, case_blob, blocked, misspelled, unigram):
     import numpy as np
 
     b_off = np.searchsorted(L2["e_ctx"], np.arange(V + 1)).astype("<u4")
@@ -551,6 +623,7 @@ def export_sections(L2, L3, V, vocab_blob, case_blob, blocked, unigram):
     return {
         "VOCB": ("s", vocab_blob.encode()), "CASE": ("s", case_blob.encode()),
         "UNIG": ("B", unigram.tobytes()), "BLCK": ("H", np.array(blocked, dtype="<u2").tobytes()),
+        "MISS": ("H", np.array(misspelled, dtype="<u2").tobytes()),
         "B2OF": ("I", b_off.tobytes()), "B2GA": ("B", b_gam.tobytes()),
         "B2ID": ("H", L2["e_w"].astype("<u2").tobytes()), "B2PR": ("B", quant(L2["e_p"]).tobytes()),
         "T3KY": ("I", t_keys.astype("<u4").tobytes()), "T3OF": ("I", t_off.tobytes()),

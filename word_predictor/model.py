@@ -13,7 +13,8 @@ Sections:
     VOCB  all words joined by "\\n"
     CASE  one "id\\tform" line per word whose usual form is not all lowercase (I'm, English)
     UNIG  unigram (continuation) probabilities, 1 byte per word
-    BLCK  ids of words that are never suggested by default
+    BLCK  ids of offensive words, not suggested unless allow_blocked is set
+    MISS  ids of likely misspellings (recieve, definately), never suggested but still used as context
     B2OF  bigrams: start offset of each context word's entries (V+1 values)
     B2GA  bigram backoff weights        B2ID/B2PR  entry word ids / probabilities
     T3KY  trigrams: context keys u*V+v (ascending)    T3OF  entry start offsets
@@ -31,7 +32,7 @@ from bisect import bisect_left
 from itertools import accumulate
 
 MAGIC = b"WPRD"
-VERSION = 1
+VERSION = 2
 STEP = 0.08
 HEAD = 16
 HEAD_MIN = 256
@@ -107,6 +108,8 @@ class NgramModel:
             i, form = line.split("\t")
             self.forms[int(i)] = form
         self.blocked = set(s["BLCK"])
+        self.misspelled = set(s["MISS"])
+        self.hidden = self.blocked | self.misspelled
         self.b_off, self.b_gam, self.b_ids, self.b_pr = s["B2OF"], s["B2GA"], s["B2ID"], s["B2PR"]
         self.t_key, self.t_off, self.t_gam, self.t_ids, self.t_pr = s["T3KY"], s["T3OF"], s["T3GA"], s["T3ID"], s["T3PR"]
         self.b_head = self._heads(s["B2HK"], s["B2HP"])
@@ -201,6 +204,6 @@ class NgramModel:
         return self._scan_top(lo, hi, n)
 
     def _scan_top(self, lo, hi, n):
-        q, blocked = self.q1, self.blocked
-        ids = (i for i in range(lo, hi) if i not in blocked)
+        q, hidden = self.q1, self.hidden
+        ids = (i for i in range(lo, hi) if i not in hidden)
         return heapq.nsmallest(n, ids, key=q.__getitem__)

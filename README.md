@@ -13,8 +13,8 @@ Offline English autocomplete for text input: completes the word being typed and 
 - **Natural output.** Handles contractions such as *I'm* and *don't* and restores casing (*I*, *English*, sentence
   starts, ALL-CAPS input).
 - **Learns locally.** Adapts to the user's own words and phrases and stores them in a local JSON file.
-- **Unobtrusive.** Ghost text is shown only above a confidence threshold, and offensive words are never suggested by
-  default.
+- **Unobtrusive.** Ghost text is shown only above a confidence threshold, offensive words are not suggested by
+  default, and common misspellings found in real typing (*recieve*, *definately*) are never suggested.
 - **Permissively licensed data.** The model is built only from openly licensed corpora (ODC-By, CC BY, Apache-2.0).
 
 ## Quick start
@@ -76,6 +76,10 @@ Learned words are stored in `~/.word_predictor/user.json` and saved on exit.
   text is learned.
 - **Display**: a next-word prediction is shown only if its probability is at least `next_threshold`; a completion
   only if its probability given the typed prefix is at least `complete_threshold`.
+- **Spelling filter**: the chat corpora contain real typos, so at build time every vocabulary word that is missing
+  from a speller dictionary (and from a short list of internet slang such as *lol*, *idk*, *tbh*), is usually written
+  in lowercase, and is one edit (two for words of 8+ letters) away from a dictionary word at least 20 times as common
+  is marked as a misspelling. Such words still serve as context but are never suggested.
 
 ## Evaluation
 
@@ -121,17 +125,17 @@ Dev split, bundled 5.00 MB model, default thresholds (next word 0.3, completion 
 
 | Domain | Source | KSR | Precision | Shown | KSR (always shown) | acc@0 | acc@1 | acc@2 | top3@0 | OOV |
 |---|---|---|---|---|---|---|---|---|---|---|
-| chat | SODA | 37.3% | 58.2% | 1.44 | 41.6% | 28.6% | 61.2% | 74.6% | 46.6% | 0.3% |
-| chat | WildChat | 30.3% | 47.8% | 1.59 | 34.9% | 21.3% | 43.3% | 55.2% | 32.4% | 2.0% |
-| chat | oasst2 | 26.2% | 46.4% | 1.62 | 31.0% | 18.1% | 42.3% | 55.7% | 30.3% | 1.3% |
-| casual | Ubuntu IRC | 22.9% | 43.9% | 1.58 | 27.1% | 13.9% | 36.9% | 50.9% | 24.6% | 1.7% |
-| writing | FineWeb | 23.1% | 43.2% | 1.68 | 28.4% | 14.3% | 35.2% | 46.7% | 23.8% | 2.9% |
-| **chat** | pooled | **32.1%** | **51.5%** | 1.54 | 36.7% | | | | | |
-| **casual** | pooled | **22.9%** | **43.9%** | 1.58 | 27.1% | | | | | |
-| **writing** | pooled | **23.1%** | **43.2%** | 1.68 | 28.4% | | | | | |
+| chat | SODA | 37.3% | 58.3% | 1.44 | 41.6% | 28.6% | 61.2% | 74.6% | 46.6% | 0.3% |
+| chat | WildChat | 30.3% | 47.8% | 1.59 | 34.8% | 21.3% | 43.3% | 55.1% | 32.4% | 2.0% |
+| chat | oasst2 | 26.2% | 46.4% | 1.62 | 30.9% | 18.1% | 42.3% | 55.7% | 30.3% | 1.3% |
+| casual | Ubuntu IRC | 22.8% | 43.8% | 1.58 | 27.0% | 13.8% | 36.8% | 50.8% | 24.5% | 1.7% |
+| writing | FineWeb | 23.1% | 43.2% | 1.68 | 28.3% | 14.3% | 35.2% | 46.7% | 23.8% | 2.9% |
+| **chat** | pooled | **32.1%** | **51.5%** | 1.54 | 36.6% | | | | | |
+| **casual** | pooled | **22.8%** | **43.8%** | 1.58 | 27.0% | | | | | |
+| **writing** | pooled | **23.1%** | **43.2%** | 1.68 | 28.3% | | | | | |
 
 - **Context matters.** With `--no-context` (typed letters and word frequency only), KSR with every suggestion shown
-  drops to 15.3% (chat), 13.9% (casual) and 14.4% (writing), and next-word accuracy to about 2%.
+  drops to 15.3% (chat), 13.8% (casual) and 14.4% (writing), and next-word accuracy to about 2%.
 - **Thresholds trade savings for precision.** Lowering both thresholds to 0.15 raises chat KSR to 34.9% at 41%
   precision; raising them to 0.5 gives 27.9% at 65%. `python bench/eval.py --grid` prints the full grid.
 - **Speed.** A query takes 37–131 µs on average (p99 under 0.8 ms on long FineWeb documents) in pure Python on a
@@ -167,7 +171,9 @@ The bundled model was built from 55M tokens: FineWeb 18.5M words, SODA 16.3M, Wi
 oasst2 0.4M.
 
 The [LDNOOBW](https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words) English word list
-(CC BY 4.0) is used only to mark words that are never suggested.
+(CC BY 4.0) is used only to mark offensive words, and the American, British and Canadian word lists of the
+[English Speller Database](https://github.com/en-wl/wordlist) (ESDB, formerly SCOWL; MIT-like license) only to
+detect misspellings.
 
 ## Project layout
 

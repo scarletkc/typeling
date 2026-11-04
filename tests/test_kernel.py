@@ -62,6 +62,12 @@ class PredictorTest(unittest.TestCase):
             w = lm.words[i]
             self.assertNotIn(w, [c.lower() for c, _ in self.p.topk(w[:-1], 8)])
 
+    def test_misspellings_are_not_suggested(self):
+        for typed, bad in (("I will reci", "recieve"), ("definat", "definately"), ("Let me knw", "knwo")):
+            self.assertNotIn(bad, [c.lower() for c, _ in self.p.topk(typed, 8)])
+        self.assertEqual(self.p.suggest("I will rece"), "ive")
+        self.assertIn("lol", [c for c, _ in self.p.topk("lo", 8)])  # slang is not treated as a misspelling
+
     def test_learning(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "user.json"
