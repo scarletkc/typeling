@@ -87,6 +87,22 @@ class Completer:
             return None
         return self.words[i]
 
+    def candidates(self, prefix, k=5):
+        """前缀的前 k 个完全匹配的候选词（不算概率，最快：k 次 argmax）。"""
+        prefix = prefix.lower()
+        if not self._ok(prefix):
+            return []
+        logits = self._forward(prefix)  # 内部缓冲区，下次推理会整体重算，可以就地改
+        full = len(prefix) * self.match
+        out = []
+        for _ in range(k):
+            i = int(logits.argmax())
+            if self._acc[i] != full:
+                break
+            out.append(self.words[i])
+            logits[i] = -np.inf
+        return out
+
     def topk(self, prefix, k=5):
         """前缀的前 k 个候选及概率（只含完全匹配的词）。"""
         prefix = prefix.lower()
