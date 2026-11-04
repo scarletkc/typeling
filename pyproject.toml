@@ -7,6 +7,7 @@ name = "word-predictor"
 version = "0.1.0"
 description = "Offline English autocomplete in pure Python: completes the current word and predicts the next one."
 readme = "README.md"
+authors = [{ name = "scarletkc" }]
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.13"
