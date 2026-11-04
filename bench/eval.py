@@ -54,9 +54,10 @@ def load(source, split):
         return [normalize(json.loads(line)["text"]) for line in f]
 
 
-def simulate(p, texts, limit, learn):
+def simulate(p, texts, limit, learn, vocab=None):
     """Simulate typing word by word, recording (top candidate is correct, its probability) at every step;
-    thresholds are applied later in score()."""
+    thresholds are applied later in score(). vocab: the model's word vocabulary for the OOV rate
+    (None for subword models, which have no out-of-vocabulary words)."""
     words, events = [], []
     hit = dict.fromkeys(ACC_LENS, 0)
     seen = dict.fromkeys(ACC_LENS, 0)
@@ -65,7 +66,7 @@ def simulate(p, texts, limit, learn):
         for m in WORD_RE.finditer(text):
             w = m.group().lower()
             before = text[: m.start()]
-            oov += w not in p.lm.id
+            oov += vocab is not None and w not in vocab
             ev = []
             for i in range(len(w)):
                 t0 = time.perf_counter()
@@ -155,7 +156,7 @@ def main():
     rows = []
     for src in args.sources:
         p.user.__init__()  # start each source with an empty user model
-        words, events, st = simulate(p, load(src, split), args.limit, args.learn)
+        words, events, st = simulate(p, load(src, split), args.limit, args.learn, p.lm.id)
         d = next(k for k, v in DOMAINS.items() if src in v)
         pooled[d][0].extend(words)
         pooled[d][1].extend(events)

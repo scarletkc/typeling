@@ -15,6 +15,13 @@ uv run training/build.py fetch               # download and clean corpora into d
 uv run training/build.py model               # count, prune to 5 MB and export word_predictor/en.bin (about 30 s)
 uv run training/build.py model --out data/x.bin --budget 3e6   # build to another path/size without overwriting en.bin
 python bench/eval.py --model data/x.bin --no-save              # evaluate that alternate model
+
+# Transformer model (docs/model-plan.md); PyTorch with CUDA 12.8 in an isolated uv environment
+uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --start '\n'   # typing benchmark + perplexity (2000 words/source)
+uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --ppl-only     # perplexity and tokens per word only
+uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --probe        # example suggestions and tokenizations
+uv run lm/eval.py --model SupraLabs/Supra-50M-Base --simulate-q4      # weights rounded as GGUF Q4_0 (pessimistic Q4_K_M)
+python bench/eval.py --limit 2000 --no-save                           # the n-gram model at the same limit, for comparison
 ```
 
 ## Conventions
@@ -30,3 +37,7 @@ python bench/eval.py --model data/x.bin --no-save              # evaluate that a
 - The test split (`data/corpus/*.test.jsonl`) is sealed: tune on the dev split only and run `bench/eval.py --final`
   only for final comparisons.
 - Write docs, comments and program output in English.
+- `lm/` scripts declare torch/transformers as uv inline script metadata (CUDA 12.8 wheel index); keep the index block
+  identical across scripts so they share one environment.
+- Git Bash rewrites arguments that look like paths (`--start "</s>"` becomes a Windows path); pass such arguments from
+  PowerShell or set `MSYS_NO_PATHCONV=1`.
