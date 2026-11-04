@@ -85,10 +85,19 @@ def fmt(losses):
     return " ".join(f"{k} {v:.3f}" for k, v in losses.items())
 
 
+def save(model, tok, directory):
+    model.config.use_cache = True
+    model.save_pretrained(directory)
+    tok.save_pretrained(directory)
+    model.config.use_cache = False
+
+
 def main():
     ap = argparse.ArgumentParser(description="Continued pretraining of a causal LM")
     ap.add_argument("--model", required=True, help="Hugging Face repo id or local directory")
     ap.add_argument("--out", type=Path, required=True, help="output directory")
+    ap.add_argument("--data", type=Path, default=None,
+                    help="token streams from lm/data.py (default: data/lm/tokens/<model>)")
     ap.add_argument("--tokens", type=float, default=20e6, help="training tokens (default 20e6)")
     ap.add_argument("--mix", default=DEFAULT_MIX, help=f"source weights (default {DEFAULT_MIX})")
     ap.add_argument("--seq", type=int, default=512, help="sequence length (default 512)")
@@ -99,6 +108,7 @@ def main():
     ap.add_argument("--weight-decay", type=float, default=0.1)
     ap.add_argument("--eval-every", type=int, default=100, help="steps between dev evaluations (default 100)")
     ap.add_argument("--log-every", type=int, default=20)
+    ap.add_argument("--save-every", type=int, default=0, help="steps between checkpoints (default 0: only at the end)")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -118,7 +128,7 @@ def main():
         for m in {model.get_input_embeddings(), model.get_output_embeddings()}:
             m.weight[tok.eos_token_id] = m.weight[newline]
 
-    directory = token_dir(args.model)
+    directory = args.data or token_dir(args.model)
     mix = parse_mix(args.mix)
     train = streams(directory, "train", mix)
     dev = streams(directory, "dev", SOURCES)
@@ -150,7 +160,8 @@ def main():
     log = open(args.out / "log.jsonl", "w", encoding="utf-8")
     params = sum(p.numel() for p in model.parameters())
     print(f"{args.model}: {params / 1e6:.1f}M parameters; {steps} steps of {per_step:,} tokens "
-          f"({steps * per_step / 1e6:.1f}M tokens), peak lr {args.lr:g}, mix {fmt(mix)}", flush=True)
+          f"({steps * per_step / 1e6:.1f}M tokens), peak lr {args.lr:g}, mix {fmt(mix)}, data {directory.name}",
+          flush=True)
     before = evaluate(model, dev, args.seq, device)
     print(f"dev loss before: {fmt(before)}", flush=True)
     log.write(json.dumps({"step": 0, "dev": before}) + "\n")
@@ -183,12 +194,14 @@ def main():
             record["dev"] = dev_loss
             print(f"dev loss at step {done}: {fmt(dev_loss)}", flush=True)
         log.write(json.dumps(record) + "\n")
+        log.flush()
+        if args.save_every and done % args.save_every == 0 and done < steps:
+            save(model, tok, args.out / "checkpoint")
+            print(f"checkpoint saved at step {done}", flush=True)
     elapsed = time.perf_counter() - t0
     log.close()
 
-    model.config.use_cache = True
-    model.save_pretrained(args.out)
-    tok.save_pretrained(args.out)
+    save(model, tok, args.out)
     summary = {"base_model": str(args.model), "tokens": steps * per_step, "steps": steps, "seconds": round(elapsed),
                "tokens_per_second": round(steps * per_step / elapsed), "dev_before": before, "dev_after": dev_loss,
                "args": {k: str(v) for k, v in vars(args).items()}}

@@ -19,6 +19,7 @@ python bench/eval.py --model data/x.bin --no-save              # evaluate that a
 
 # Typeling-25M (docs/model-plan.md); PyTorch with CUDA 12.8 in an isolated uv environment
 uv run lm/data.py --model SupraLabs/Supra2-Medium-Base                # tokenize data/corpus into data/lm/tokens/ (about 1 min)
+uv run lm/data.py --model SupraLabs/Supra2-Medium-Base --space-split 0.01   # with the trailing-space augmentation (+space0.01)
 uv run lm/train.py --model SupraLabs/Supra2-Medium-Base --tokens 20e6 --out data/lm/runs/pilot   # continued pretraining (about 60k tokens/s)
 uv run lm/eval.py --model data/lm/runs/pilot                          # typing benchmark of a trained checkpoint (start marker: </s>)
 uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --start '\n'   # zero-shot base model (never saw </s>; use a newline)

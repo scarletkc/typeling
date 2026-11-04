@@ -96,11 +96,12 @@ packing to 512 tokens, gradient clipping at 1.0.
      token's row, a direct edit of the weights, so `</s>` starts out meaning "a new text begins". The embedding is
      tied, so this also makes the model predict `</s>` wherever it would predict a newline; training separates the
      two.
-   - *Trailing-space augmentation.* In a small share of word-initial tokens (about 2–5%, tuned on dev perplexity),
-     `" word"` is re-tokenized as `" "` followed by the tokens of `"word"`. The model then also learns to continue
-     text that ends in a space, so users of the raw weights (for example llama.cpp without the typing decoder) get
-     sensible predictions after a space. The decoder keeps its own trailing-space handling (section 6). Check: dev
-     perplexity on unmodified text must not get worse than without the augmentation.
+   - *Trailing-space augmentation* (`lm/data.py --space-split`). In 1% of word-initial tokens, `" word"` is
+     re-tokenized as `" "` followed by the tokens of `"word"`. The model then also learns to continue text that ends
+     in a space, so users of the raw weights (for example llama.cpp without the typing decoder) get sensible
+     predictions after a space. The decoder keeps its own trailing-space handling (section 6). The rate was chosen in
+     the milestone 1 comparison (section 13): 3% cost about 3% dev perplexity and 0.7 KSR points, 1% costs about 1%
+     perplexity and still teaches the behavior.
 2. **Typo-robust fine-tuning.** Two special tokens are added (`<|typed|>`, `<|word|>`; the embedding matrix is
    resized). Examples have the form `context <|typed|> noisy-prefix <|word|> intended-word`, where the noise model
    applies QWERTY adjacent-key substitutions, omissions, insertions, adjacent transpositions, missing apostrophes
@@ -333,3 +334,26 @@ WildChat 36.34% / 24.75% (+6.8), oasst2 39.36% / 28.10% (+8.8), IRC 27.74% / 17.
 - Writing regresses slightly (KSR −1.1 points, perplexity +13%) as the model moves toward chat; it stays far above the
   n-gram model.
 - SODA gains the most; it is synthetic and formulaic, so WildChat, oasst2 and IRC are the more telling numbers.
+
+**Learning rate and trailing-space augmentation.** Same setup as the pilot (20M tokens, same mix); dev loss per token
+at the end:
+
+| Run | FineWeb | SODA | WildChat | IRC | oasst2 |
+|---|---|---|---|---|---|
+| lr 3e-4 | **3.714** | 1.984 | 3.830 | 4.033 | **3.382** |
+| lr 6e-4 (the pilot) | 3.762 | 1.929 | 3.775 | 3.985 | 3.390 |
+| lr 1.2e-3 | 3.862 | **1.907** | **3.768** | **3.965** | 3.433 |
+| lr 6e-4, space split 3% | 3.781 | 1.964 | 3.813 | 4.016 | 3.418 |
+| lr 6e-4, space split 1% | 3.770 | 1.939 | 3.800 | 3.996 | 3.398 |
+
+- A higher learning rate adapts faster to chat and forgets more writing; 1.2e-3 gains 0.01–0.02 on chat for 0.1 on
+  FineWeb, so 6e-4 is kept.
+- The augmentation works: on `"Let me know "` the raw model without it puts its mass on junk (`'!'` 0.24, an invalid
+  byte 0.23); with 3% it predicts `'if'` 0.69, `'how'` 0.16, `'what'` 0.10, with 1% `'what'` 0.33, `'if'` 0.32,
+  `'how'` 0.29. The decoder's suggestions barely change.
+- Its cost: 3% raises dev loss by about 0.03 on every source and costs about 0.7 KSR points (SODA 45.38%, WildChat
+  35.61%, against 46.01% and 36.34% for the pilot); 1% raises dev loss by about 0.01. The full run uses 1%.
+
+**Full continued pretraining** (in progress): 150M tokens (4,578 steps), lr 6e-4, mix FineWeb 0.30, SODA 0.25,
+WildChat 0.27, IRC 0.17, oasst2 0.01 (oasst2 has only 0.5M tokens; at 0.05 it would be repeated about 15 times),
+space split 1%; `data/lm/runs/cpt-150m`.
