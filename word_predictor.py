@@ -111,7 +111,8 @@ def show_row(word):
 
 
 def dump(path="weights.npz"):
-    np.savez_compressed(path, W=W, b=B, words=np.array(WORDS))
+    np.savez_compressed(path, W=W, b=B, words=np.array(WORDS),
+                        match=MATCH, mismatch=MISMATCH)
     print(f"已导出 W {W.shape}、b {B.shape} 和词表到 {path}")
 
 
