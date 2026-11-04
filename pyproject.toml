@@ -3,9 +3,9 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "word-predictor"
+name = "typeling"
 version = "0.1.0"
-description = "Offline English autocomplete in pure Python: completes the current word and predicts the next one."
+description = "Offline English typing prediction in pure Python: completes the current word and predicts the next one."
 readme = "README.md"
 authors = [{ name = "scarletkc" }]
 license = "Apache-2.0"
@@ -27,15 +27,15 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/scarletkc/word-predictor"
-Source = "https://github.com/scarletkc/word-predictor"
-Issues = "https://github.com/scarletkc/word-predictor/issues"
+Homepage = "https://github.com/scarletkc/typeling"
+Source = "https://github.com/scarletkc/typeling"
+Issues = "https://github.com/scarletkc/typeling/issues"
 
 [project.scripts]
-word-predictor = "word_predictor.demo:main"
+typeling = "typeling.demo:main"
 
 [tool.setuptools]
-packages = ["word_predictor"]
+packages = ["typeling"]
 
 [tool.setuptools.package-data]
-word_predictor = ["en.bin"]
+typeling = ["en.bin"]

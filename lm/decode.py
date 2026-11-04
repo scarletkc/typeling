@@ -1,6 +1,6 @@
 """
 Typing decoder: word suggestions from a causal subword language model, with the same interface as
-word_predictor.Predictor.
+typeling.Predictor.
 
     from decode import LMPredictor
     p = LMPredictor("SupraLabs/Supra-50M-Base")
@@ -17,7 +17,7 @@ lead plus the typed letters (" kn") become a constraint on the generated text:
                   else (a space, punctuation, end of text), whose total probability ends the word
 A word's probability is the sum, over its token paths, of path probability x end probability, divided by the
 probability of the constraint itself. Paths are explored with a small beam; casings of a word are merged. Words
-follow word_predictor.text.WORD (ASCII letters with inner apostrophes).
+follow typeling.text.WORD (ASCII letters with inner apostrophes).
 Supports GPT-2-style byte-level BPE tokenizers (Llama-architecture models such as Supra, GPT-NeoX/Pythia, SmolLM2).
 """
 
@@ -32,7 +32,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from word_predictor.text import normalize, split_input  # noqa: E402
+from typeling.text import normalize, split_input  # noqa: E402
 
 CONTEXT_CHARS = 2000   # only this many characters before the cursor are used, as in Predictor
 WORD_STATE = re.compile(r"[A-Za-z]+(?:'[A-Za-z]*)*")  # a word being built; may end in an apostrophe for now
@@ -92,7 +92,7 @@ class LMPredictor:
         self._cont = letters | apostrophe   # continues a word
         self._letters = letters             # continues a word that ends in an apostrophe
 
-    # --- Public API (same as word_predictor.Predictor) ---
+    # --- Public API (same as typeling.Predictor) ---
 
     def topk(self, text, k=3):
         """Text before the cursor -> the k most likely full words with probabilities (no display threshold)."""

@@ -1,14 +1,14 @@
 """
 Terminal ghost-text autocomplete demo: completes the word being typed and predicts the next word after a space.
 
-    python -m word_predictor                  # start typing; the grey text is the suggestion
-    python -m word_predictor --no-learn       # do not learn or save your words
-    python -m word_predictor --bench          # measure per-keystroke latency
-    echo I wan | python -m word_predictor     # non-interactive: prints "I wan[t]"
+    python -m typeling                  # start typing; the grey text is the suggestion
+    python -m typeling --no-learn       # do not learn or save your words
+    python -m typeling --bench          # measure per-keystroke latency
+    echo I wan | python -m typeling     # non-interactive: prints "I wan[t]"
 
 Keys: Tab / Right accept, Esc hide, Backspace delete a character, Ctrl+W delete a word, Enter new line, Ctrl+C quit.
 Each line submitted with Enter is learned by the user model, which is stored only on this machine
-(~/.word_predictor/user.json) and saved on exit.
+(~/.typeling/user.json) and saved on exit.
 """
 
 import os
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .predictor import Predictor
 
-USER_FILE = Path.home() / ".word_predictor" / "user.json"
+USER_FILE = Path.home() / ".typeling" / "user.json"
 
 GREY, RESET = "\x1b[90m", "\x1b[0m"
 PROMPT = "> "

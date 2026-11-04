@@ -36,8 +36,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from word_predictor import DEFAULT_MODEL, Predictor  # noqa: E402
-from word_predictor.text import WORD_RE, normalize  # noqa: E402
+from typeling import DEFAULT_MODEL, Predictor  # noqa: E402
+from typeling.text import WORD_RE, normalize  # noqa: E402
 
 CORPUS = ROOT / "data" / "corpus"
 RESULTS = Path(__file__).resolve().parent / "results.jsonl"

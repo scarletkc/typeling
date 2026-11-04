@@ -1,9 +1,9 @@
-word-predictor
-Copyright 2026 The word-predictor Authors
+Typeling
+Copyright 2026 The Typeling Authors
 
 The source code is licensed under the Apache License, Version 2.0; see LICENSE.
 
-The model file word_predictor/en.bin consists of n-gram probabilities (pruned and quantized)
+The model file typeling/en.bin consists of n-gram probabilities (pruned and quantized)
 computed from the datasets below. It is licensed under the Open Data Commons Attribution
 License (ODC-By) v1.0 (https://opendatacommons.org/licenses/by/1-0/). Please retain the
 following attributions when redistributing or using the model:

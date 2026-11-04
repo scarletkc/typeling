@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from word_predictor import Predictor
-from word_predictor.model import read_model, write_model
-from word_predictor.text import normalize, split_input, tokenize
+from typeling import Predictor
+from typeling.model import read_model, write_model
+from typeling.text import normalize, split_input, tokenize
 
 
 class TextTest(unittest.TestCase):

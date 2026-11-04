@@ -3,7 +3,7 @@
 # dependencies = ["numpy", "pyarrow", "huggingface_hub", "tzdata"]
 # ///
 """
-Builds word_predictor/en.bin: fetch corpora -> clean -> hold out dev/test splits -> count a Kneser-Ney trigram model
+Builds typeling/en.bin: fetch corpora -> clean -> hold out dev/test splits -> count a Kneser-Ney trigram model
 -> prune and quantize -> export.
 
     uv run training/build.py fetch     # download and clean corpora into data/corpus/ (finished sources are skipped)
@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from word_predictor.text import normalize  # noqa: E402
+from typeling.text import normalize  # noqa: E402
 
 CORPUS = ROOT / "data" / "corpus"
 SPLITS = ("train", "dev", "test")
@@ -318,7 +318,7 @@ def _chunks(paths, size=5000):
 def _count_chunk(texts):
     """Pass 1: token counts, plus the non-sentence-initial counts of each word and of its cased forms,
     used to restore casing."""
-    from word_predictor.text import BOUNDARY, PUNCT, tokenize
+    from typeling.text import BOUNDARY, PUNCT, tokenize
 
     tok, inner, cased = Counter(), Counter(), Counter()
     for text in texts:
@@ -341,7 +341,7 @@ def _ids_chunk(texts):
     """Pass 2: each segment becomes ids [<s>, <s>, tokens..., <s>]; `valid` marks the positions to predict."""
     from array import array
 
-    from word_predictor.text import BOUNDARY, UNK, tokenize
+    from typeling.text import BOUNDARY, UNK, tokenize
 
     s, unk, tid = _TID[BOUNDARY], _TID[UNK], _TID
     seq, valid = array("H"), bytearray()
@@ -408,7 +408,7 @@ def prune_scores(k3, c3, kc2, cc2, craw2, V, is_word, p1):
 def quant(p):
     import numpy as np
 
-    from word_predictor.model import STEP
+    from typeling.model import STEP
 
     return np.clip(np.rint(-np.log(np.maximum(p, 1e-300)) / STEP), 0, 255).astype(np.uint8)
 
@@ -418,7 +418,7 @@ def heads(e_ctx, e_p, key_of):
     key_of(context) -> the key the runtime uses to look up that context."""
     import numpy as np
 
-    from word_predictor.model import HEAD, HEAD_MIN
+    from typeling.model import HEAD, HEAD_MIN
 
     keys, pos = [], []
     uniq, start, cnt = np.unique(e_ctx, return_index=True, return_counts=True)
@@ -501,8 +501,8 @@ def build_model(out, budget, min_count, workers):
     import numpy as np
     from multiprocessing import Pool
 
-    from word_predictor.model import write_model
-    from word_predictor.text import SPECIALS
+    from typeling.model import write_model
+    from typeling.text import SPECIALS
 
     paths = sorted(CORPUS.glob("*.train.jsonl"))
     if not paths:
@@ -598,7 +598,7 @@ def build_model(out, budget, min_count, workers):
           f"{time.time() - t0:.0f} s")
 
     meta = {
-        "name": "word-predictor-en", "specials": list(SPECIALS), "words": W, "tokens": int(n_tokens),
+        "name": "typeling-ngram-en", "specials": list(SPECIALS), "words": W, "tokens": int(n_tokens),
         "prune": {"method": "weighted-difference", "theta": round(theta, 3), "min_count": min_count},
         "discounts": {"bigram": L2["D"], "trigram": L3["D"]},
         "sources": [p.name.split(".")[0] for p in paths], "license": "ODC-By-1.0", "built": time.strftime("%Y-%m-%d"),
@@ -643,13 +643,13 @@ def main():
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
-    ap = argparse.ArgumentParser(description="Fetch corpora and build word_predictor/en.bin.")
+    ap = argparse.ArgumentParser(description="Fetch corpora and build typeling/en.bin.")
     ap.add_argument("step", nargs="?", choices=["fetch", "model", "all"], default="all",
                     help="fetch corpora, build the model, or both (default)")
     ap.add_argument("--sources", nargs="+", choices=list(SOURCES), default=list(SOURCES),
                     help="corpora to fetch (default: all)")
-    ap.add_argument("--out", type=Path, default=ROOT / "word_predictor" / "en.bin",
-                    help="output model path (default: word_predictor/en.bin)")
+    ap.add_argument("--out", type=Path, default=ROOT / "typeling" / "en.bin",
+                    help="output model path (default: typeling/en.bin)")
     ap.add_argument("--budget", type=float, default=5e6, help="maximum model file size in bytes (default: 5e6)")
     ap.add_argument("--min-count", type=int, default=2,
                     help="drop bigrams/trigrams seen fewer times than this in the training data (default: 2)")

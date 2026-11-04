@@ -57,7 +57,7 @@ def read_model(path):
     with open(path, "rb") as f:
         data = f.read()
     if data[:4] != MAGIC:
-        raise ValueError(f"{path} is not a word-predictor model file")
+        raise ValueError(f"{path} is not a Typeling n-gram model file")
     version, n = struct.unpack_from("<II", data, 4)
     if version != VERSION:
         raise ValueError(f"unsupported model version {version} (expected {VERSION})")

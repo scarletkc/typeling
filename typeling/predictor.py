@@ -1,7 +1,7 @@
 """
 Public API.
 
-    from word_predictor import Predictor
+    from typeling import Predictor
     p = Predictor()                          # bundled model; Predictor(user="user.json") enables persistent learning
     p.suggest("I'll see y")                  # -> "ou"    ghost text to display ("" when not confident)
     p.suggest("Thank you so ")               # -> "much"  after a space, predict the next word

@@ -1,6 +1,10 @@
-# word-predictor
+# Typeling
 
-Offline English autocomplete for text input: completes the word being typed and predicts the next word, in pure Python.
+Offline English typing prediction: completes the word being typed and predicts the next word.
+
+This repository contains the `typeling` package, a dependency-free n-gram autocomplete kernel in pure Python
+(documented below), and the training of Typeling-25M, a small transformer language model for the same task, which is
+in progress: see [docs/model-plan.md](docs/model-plan.md) for the plan and the results so far.
 
 ## Features
 
@@ -26,7 +30,7 @@ pip install .
 ### Python API
 
 ```python
-from word_predictor import Predictor
+from typeling import Predictor
 
 p = Predictor()
 p.suggest("Let me kn")         # 'ow'    ghost text to display after the cursor
@@ -47,10 +51,10 @@ alternative model file) and the keyword-only options `next_threshold` (default 0
 ### Terminal demo
 
 ```bash
-python -m word_predictor                  # or: word-predictor
-python -m word_predictor --no-learn       # do not learn or save your words
-python -m word_predictor --bench          # measure per-keystroke latency
-echo "I wan" | python -m word_predictor   # pipe mode: prints "I wan[t]"
+python -m typeling                  # or: typeling
+python -m typeling --no-learn       # do not learn or save your words
+python -m typeling --bench          # measure per-keystroke latency
+echo "I wan" | python -m typeling   # pipe mode: prints "I wan[t]"
 ```
 
 | Key | Action |
@@ -61,7 +65,7 @@ echo "I wan" | python -m word_predictor   # pipe mode: prints "I wan[t]"
 | Enter | new line (the finished line is learned unless `--no-learn` is given) |
 | Ctrl+C | quit |
 
-Learned words are stored in `~/.word_predictor/user.json` and saved on exit.
+Learned words are stored in `~/.typeling/user.json` and saved on exit.
 
 ## How it works
 
@@ -148,12 +152,12 @@ are installed automatically into an isolated environment.
 
 ```bash
 uv run training/build.py fetch    # download and clean the corpora into data/corpus/
-uv run training/build.py model    # count, prune and export word_predictor/en.bin (about 30 s)
+uv run training/build.py model    # count, prune and export typeling/en.bin (about 30 s)
 uv run training/build.py          # both steps
 ```
 
 `fetch` skips sources that are already downloaded and accepts `--sources`. `model` accepts `--out PATH` (default
-`word_predictor/en.bin`), `--budget BYTES` (default 5e6), `--min-count N` (drop n-grams seen fewer than N times,
+`typeling/en.bin`), `--budget BYTES` (default 5e6), `--min-count N` (drop n-grams seen fewer than N times,
 default 2) and `--workers N` (default 8).
 
 Each corpus is cleaned (emails, URLs and phone numbers are removed; chat sources keep only turns that look typed by a
@@ -178,20 +182,22 @@ detect misspellings.
 ## Project layout
 
 ```text
-word_predictor/        runtime package (standard library only)
+typeling/              runtime package (standard library only)
   predictor.py         public API: Predictor
   model.py             binary model format and n-gram scoring
   text.py              tokenizer shared by training and runtime
   user.py              local user model
-  demo.py              terminal demo (python -m word_predictor)
+  demo.py              terminal demo (python -m typeling)
   en.bin               bundled model
 training/build.py      corpus download and model build
 bench/eval.py          typing-simulation benchmark
 tests/                 unit tests (python -m unittest discover tests)
+lm/                    Typeling-25M: typing decoder and benchmark for causal LMs (PyTorch, uv scripts)
+docs/model-plan.md     plan and results for Typeling-25M
 ```
 
 ## License
 
-The code is licensed under the [Apache License 2.0](LICENSE). The bundled model `word_predictor/en.bin` is licensed
+The code is licensed under the [Apache License 2.0](LICENSE). The bundled model `typeling/en.bin` is licensed
 under the [Open Data Commons Attribution License (ODC-By) 1.0](https://opendatacommons.org/licenses/by/1-0/); see
 [NOTICE](NOTICE) for the required attributions.
