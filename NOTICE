@@ -1,0 +1,25 @@
+word-predictor
+Copyright 2026 The word-predictor Authors
+
+The source code is licensed under the Apache License, Version 2.0; see LICENSE.
+
+The model file word_predictor/en.bin consists of n-gram probabilities (pruned and quantized)
+computed from the datasets below. It is licensed under the Open Data Commons Attribution
+License (ODC-By) v1.0 (https://opendatacommons.org/licenses/by/1-0/). Please retain the
+following attributions when redistributing or using the model:
+
+- FineWeb (HuggingFaceFW/fineweb), Hugging Face — ODC-By 1.0; use is also subject to the
+  Common Crawl Terms of Use
+  https://huggingface.co/datasets/HuggingFaceFW/fineweb
+- SODA (allenai/soda), Kim et al. 2022, "SODA: Million-scale Dialogue Distillation with Social
+  Commonsense Contextualization" — CC BY 4.0
+  https://huggingface.co/datasets/allenai/soda
+- WildChat-1M (allenai/WildChat-1M), Zhao et al. 2024, "WildChat: 1M ChatGPT Interaction Logs in
+  the Wild" — ODC-By 1.0
+  https://huggingface.co/datasets/allenai/WildChat-1M
+- OpenAssistant Conversations Release 2 (OpenAssistant/oasst2), LAION — Apache License 2.0
+  https://huggingface.co/datasets/OpenAssistant/oasst2
+
+The words that the model never suggests by default are taken from the List of Dirty, Naughty,
+Obscene, and Otherwise Bad Words — CC BY 4.0
+  https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words

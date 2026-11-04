@@ -1,15 +1,14 @@
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["numpy"]
-# ///
 """
-终端里的灰色自动补全（基于 complete_kernel.Completer）。
+Terminal ghost-text autocomplete demo: completes the word being typed and predicts the next word after a space.
 
-    python autocomplete.py                  # 开始打字，灰色部分是补全
-    python autocomplete.py --bench          # 测每次按键的补全耗时
-    echo I wan | python autocomplete.py     # 非交互：打印 "I wan[t]"
+    python -m word_predictor                  # start typing; the grey text is the suggestion
+    python -m word_predictor --no-learn       # do not learn or save your words
+    python -m word_predictor --bench          # measure per-keystroke latency
+    echo I wan | python -m word_predictor     # non-interactive: prints "I wan[t]"
 
-按键：Tab / → 接受补全 · Esc 隐藏补全 · Backspace 删字 · Ctrl+W 删词 · Enter 换行 · Ctrl+C 退出
+Keys: Tab / Right accept, Esc hide, Backspace delete a character, Ctrl+W delete a word, Enter new line, Ctrl+C quit.
+Each line submitted with Enter is learned by the user model, which is stored only on this machine
+(~/.word_predictor/user.json) and saved on exit.
 """
 
 import os
@@ -17,22 +16,25 @@ import re
 import shutil
 import sys
 import time
+from pathlib import Path
 
-from complete_kernel import Completer
+from .predictor import Predictor
+
+USER_FILE = Path.home() / ".word_predictor" / "user.json"
 
 GREY, RESET = "\x1b[90m", "\x1b[0m"
 PROMPT = "> "
-ACCEPT_ADDS_SPACE = False  # 接受补全后是否顺手补一个空格
+ACCEPT_ADDS_SPACE = False  # append a space after an accepted suggestion
 
 
 class LineEditor:
-    """纯状态机：吃按键、产出要画的字符串，不直接碰终端。"""
+    """Pure state machine: consumes keys and returns the string to draw; never touches the terminal."""
 
     def __init__(self, completer):
         self.c = completer
         self.text = ""
-        self.hidden = False          # Esc 之后隐藏补全，直到下一次输入
-        self._cache = (None, "")     # (text, ghost)：同一行文字只推理一次
+        self.hidden = False          # set by Esc; cleared by the next edit
+        self._cache = (None, "")     # (text, ghost): one inference per distinct text
         self.latencies = []
 
     def ghost(self):
@@ -46,7 +48,7 @@ class LineEditor:
         return self._cache[1]
 
     def feed(self, key):
-        """处理一个按键；返回 "enter" / "quit" / None。"""
+        """Handle one key; return "enter", "quit" or None."""
         if key is None:
             return None
         if key in ("TAB", "RIGHT"):
@@ -83,7 +85,7 @@ class LineEditor:
         return s
 
 
-# ───────────────────────── 终端读键 ─────────────────────────
+# Raw keyboard input, per platform.
 
 if os.name == "nt":
     import ctypes
@@ -100,7 +102,7 @@ if os.name == "nt":
         return _KEYS.get(ch, ch)
 
     def read_keys():
-        """阻塞读一个键，再把已经排队的键一起读走（打字快时合并成一次重绘）。"""
+        """Block for one key, then drain any queued keys so fast typing triggers a single redraw."""
         keys = [_read_one()]
         while msvcrt.kbhit():
             keys.append(_read_one())
@@ -108,7 +110,7 @@ if os.name == "nt":
 
     class raw_mode:
         def __enter__(self):
-            # 打开本控制台的 ANSI 转义支持（灰色、光标移动）
+            # Enable ANSI escape sequences (colors, cursor movement) in this console.
             k32 = ctypes.windll.kernel32
             h = k32.GetStdHandle(-11)
             mode = ctypes.c_uint32()
@@ -153,26 +155,25 @@ else:
             return False
 
 
-# ───────────────────────── 三种模式 ─────────────────────────
-
-
 def _stats(latencies):
     if not latencies:
         return ""
     us = sorted(x * 1e6 for x in latencies)
     p99 = us[min(len(us) - 1, int(len(us) * 0.99))]
-    return f"补全 {len(us)} 次：平均 {sum(us) / len(us):.0f} µs，p99 {p99:.0f} µs，最慢 {us[-1]:.0f} µs"
+    return f"{len(us)} suggestions: mean {sum(us) / len(us):.0f} µs, p99 {p99:.0f} µs, max {us[-1]:.0f} µs"
 
 
-def interactive():
+def interactive(learn):
     t0 = time.perf_counter()
-    ed = LineEditor(Completer())
+    p = Predictor(user=USER_FILE if learn else None)
+    ed = LineEditor(p)
     load_ms = (time.perf_counter() - t0) * 1000
     out = sys.stdout
     width = lambda: shutil.get_terminal_size().columns
+    note = f"learning your words ({USER_FILE})" if learn else "learning off"
     with raw_mode():
-        out.write(f"{GREY}权重加载 {load_ms:.0f} ms · Tab/→ 接受 · Esc 隐藏 · Ctrl+W 删词 · "
-                  f"Enter 换行 · Ctrl+C 退出{RESET}\r\n")
+        out.write(f"{GREY}Model loaded in {load_ms:.0f} ms · {note} · Tab/→ accept · Esc hide · "
+                  f"Ctrl+W delete word · Enter new line · Ctrl+C quit{RESET}\r\n")
         out.write(ed.render(width()))
         out.flush()
         try:
@@ -183,16 +184,20 @@ def interactive():
                         raise KeyboardInterrupt
                     if r == "enter":
                         out.write(ed.render(width(), show_ghost=False) + "\r\n")
+                        if learn and ed.text.strip():
+                            p.learn(ed.text)
                         ed.text = ""
                 out.write(ed.render(width()))
                 out.flush()
         except KeyboardInterrupt:
             out.write(ed.render(width(), show_ghost=False) + "\r\n")
+    if learn:
+        p.save()
     print(_stats(ed.latencies))
 
 
 def pipe_mode():
-    c = Completer()
+    c = Predictor()
     for line in sys.stdin:
         line = line.rstrip("\r\n")
         g = c.suggest(line)
@@ -201,21 +206,21 @@ def pipe_mode():
 
 def bench():
     t0 = time.perf_counter()
-    c = Completer()
-    print(f"权重加载 {(time.perf_counter() - t0) * 1000:.0f} ms")
+    c = Predictor()
+    print(f"Model loaded in {(time.perf_counter() - t0) * 1000:.0f} ms")
     text = ("I want to know whether this little model can keep up with really fast "
             "typing because everyone expects instant suggestions while writing ") * 30
     ed = LineEditor(c)
-    for ch in text:              # 逐键输入
+    for ch in text:              # type one key at a time
         ed.feed(ch)
         ed.ghost()
-    for _ in range(200):         # 再逐键删回去
+    for _ in range(200):         # then backspace one key at a time
         ed.feed("BS")
         ed.ghost()
     print(_stats(ed.latencies))
-    for s in ["I wan", "th", "Hel", "WOR", "encyc", "(beaut", "don't", "xylo"]:
+    for s in ["I wan", "th", "Hel", "WOR", "encyc", "(beaut", "I don", "xylo", "Thank you so ", "how are "]:
         g = c.suggest(s)
-        print(f"  {s!r:>10} → {s}{GREY}{g}{RESET}" + ("" if g else "   （无补全）"))
+        print(f"  {s!r:>10} → {s}{GREY}{g}{RESET}" + ("" if g else "   (no suggestion)"))
 
 
 def main():
@@ -228,7 +233,7 @@ def main():
     elif not sys.stdin.isatty():
         pipe_mode()
     else:
-        interactive()
+        interactive(learn="--no-learn" not in sys.argv[1:])
 
 
 if __name__ == "__main__":

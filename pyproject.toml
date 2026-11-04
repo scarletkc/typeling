@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "word-predictor"
+version = "0.1.0"
+description = "Offline English autocomplete in pure Python: completes the current word and predicts the next one."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.13"
+dependencies = []
+keywords = ["autocomplete", "word prediction", "next-word prediction", "language model", "kneser-ney", "n-gram"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Linguistic",
+]
+
+[project.urls]
+Homepage = "https://github.com/scarletkc/word-predictor"
+Source = "https://github.com/scarletkc/word-predictor"
+Issues = "https://github.com/scarletkc/word-predictor/issues"
+
+[project.scripts]
+word-predictor = "word_predictor.demo:main"
+
+[tool.setuptools]
+packages = ["word_predictor"]
+
+[tool.setuptools.package-data]
+word_predictor = ["en.bin"]

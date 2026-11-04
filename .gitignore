@@ -1,3 +1,7 @@
 __pycache__/
-weights.npz
 data/
+*.tmp
+.venv/
+dist/
+build/
+*.egg-info/
