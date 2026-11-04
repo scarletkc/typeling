@@ -52,17 +52,18 @@ class LMPredictor:
     def __init__(self, model, *, device=None, dtype=torch.float32, start=None, beam=8, max_word_tokens=6,
                  next_threshold=0.3, complete_threshold=0.3):
         """model: Hugging Face repo id or local directory. start: text that marks the beginning of a text
-        (default: the tokenizer's BOS or EOS token)."""
+        (default: the tokenizer's EOS token, which separates the texts in Typeling's training data)."""
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.tok = AutoTokenizer.from_pretrained(model)
         self.model = AutoModelForCausalLM.from_pretrained(model, dtype=dtype).to(self.device).eval()
         self.params = sum(t.numel() for t in self.model.parameters())
         self.beam, self.max_word_tokens = beam, max_word_tokens
         self.next_threshold, self.complete_threshold = next_threshold, complete_threshold
-        self.start = start if start is not None else (self.tok.bos_token or self.tok.eos_token or "\n")
+        self.start = start if start is not None else (self.tok.eos_token or self.tok.bos_token or "\n")
         self.start_ids = self.encode(self.start)
         self.max_context = min(getattr(self.model.config, "max_position_embeddings", 1024), 1024) - 64
         self._index_vocab()
+        self.prefix_space = self.strs[self.encode("a")[0]].startswith(" ")  # tokenizer adds a space to every text
         self._base = self._ids = self._cache = self._logp0 = None
 
     def encode(self, text):
@@ -160,6 +161,8 @@ class LMPredictor:
         context, partial = sp
         base = context.rstrip()
         lead = context[len(base):]
+        if not base and not lead and self.prefix_space:
+            lead = " "  # such a model starts every text with a space, so the first word is " word"
         self._context(base)
         target, start = lead + partial, len(lead)
         beam, strs = self.beam, self.strs

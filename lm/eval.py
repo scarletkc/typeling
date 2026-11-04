@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["torch>=2.7", "transformers>=5", "huggingface_hub"]
+# dependencies = ["torch>=2.7", "transformers>=5", "huggingface_hub", "numpy"]
 #
 # [[tool.uv.index]]
 # name = "pytorch-cu128"
@@ -120,7 +120,7 @@ def main():
     ap.add_argument("--limit", type=int, default=2000, help="max target words per source (0 = no limit)")
     ap.add_argument("--beam", type=int, default=8, help="beam width of the decoder")
     ap.add_argument("--start", default=None,
-                    help=r"text marking the beginning of a text, escapes allowed (\n); default: BOS or EOS token")
+                    help=r"text marking the beginning of a text, escapes allowed (\n); default: the EOS token")
     ap.add_argument("--dtype", choices=("float32", "bfloat16"), default="float32")
     ap.add_argument("--simulate-q4", action="store_true",
                     help="round the weights as GGUF Q4_0 does (a pessimistic stand-in for Q4_K_M)")

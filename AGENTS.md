@@ -18,7 +18,10 @@ uv run training/build.py model --out data/x.bin --budget 3e6   # build to anothe
 python bench/eval.py --model data/x.bin --no-save              # evaluate that alternate model
 
 # Typeling-25M (docs/model-plan.md); PyTorch with CUDA 12.8 in an isolated uv environment
-uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --start '\n'   # typing benchmark + perplexity (2000 words/source)
+uv run lm/data.py --model SupraLabs/Supra2-Medium-Base                # tokenize data/corpus into data/lm/tokens/ (about 1 min)
+uv run lm/train.py --model SupraLabs/Supra2-Medium-Base --tokens 20e6 --out data/lm/runs/pilot   # continued pretraining (about 60k tokens/s)
+uv run lm/eval.py --model data/lm/runs/pilot                          # typing benchmark of a trained checkpoint (start marker: </s>)
+uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --start '\n'   # zero-shot base model (never saw </s>; use a newline)
 uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --ppl-only     # perplexity and tokens per word only
 uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --probe        # example suggestions and tokenizations
 uv run lm/eval.py --model SupraLabs/Supra-50M-Base --simulate-q4      # weights rounded as GGUF Q4_0 (pessimistic Q4_K_M)
@@ -40,5 +43,9 @@ python bench/eval.py --limit 2000 --no-save                           # the n-gr
 - Write docs, comments and program output in English.
 - `lm/` scripts declare torch/transformers as uv inline script metadata (CUDA 12.8 wheel index); keep the index block
   identical across scripts so they share one environment.
+- For one-off Python checks outside the scripts, use `uv run --no-project --with ... python -c ...`; without
+  `--no-project`, uv creates a `.venv` in the repository and installs the package into it.
+- The Supra2-Medium tokenizer adds a space before every text (`add_prefix_space`), so "\n" alone encodes as two tokens
+  and the first word of a text is " word"; look up the newline token as "Ċ" (`convert_tokens_to_ids("\u010a")`).
 - Git Bash rewrites arguments that look like paths (`--start "</s>"` becomes a Windows path); pass such arguments from
   PowerShell or set `MSYS_NO_PATHCONV=1`.

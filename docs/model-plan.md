@@ -1,7 +1,9 @@
 # Plan: Typeling-25M, a small language model for typing prediction
 
 Status: milestone 0 done (section 12): the typing decoder (`lm/decode.py`) and the benchmark adapter (`lm/eval.py`)
-are implemented, the candidates are evaluated, and the base model is chosen. Next: milestone 1.
+are implemented, the candidates are evaluated, and the base model is chosen. Milestone 1 in progress: the data
+pipeline (`lm/data.py`) and training script (`lm/train.py`) are implemented, and a 20M-token pilot already meets the
+v1 success criteria in full precision (section 13).
 
 ## 1. Goal
 
@@ -168,9 +170,9 @@ The model predicts tokens; the user needs words. `lm/decode.py` implements this 
 
 ## 8. Compute
 
-Training cost is about 6 × parameters × tokens: about 2.3e16 FLOPs for 25.4M parameters and 150M tokens, which is
-well under an hour on the RTX 5070 Ti laptop GPU at a realistic utilization; typo fine-tuning is smaller. Milestone 1
-starts with a short pilot (about 20M tokens) that measures the actual throughput. Memory is not a constraint. PyTorch
+Training cost is about 6 × parameters × tokens: about 2.3e16 FLOPs for 25.4M parameters and 150M tokens. Measured
+in the milestone 1 pilot: about 60k tokens/s on the RTX 5070 Ti laptop GPU (97% utilization, 9.5 GB of memory at 32 ×
+512 tokens per micro-batch), so 150–200M tokens take 40–55 minutes; typo fine-tuning is smaller. PyTorch
 with CUDA 12.8 or newer is required for this GPU (Blackwell); it is installed in an isolated uv environment, never as
 a dependency of the runtime package.
 
@@ -218,9 +220,9 @@ kept in git history).
 lm/
   decode.py      typing decoder (beam over words, typed-prefix completion)          implemented
   eval.py        typing benchmark, perplexity and simulated Q4 for causal LMs      implemented
-  data.py        tokenize data/corpus into packed shards with the base tokenizer
+  data.py        tokenize data/corpus into packed token streams                    implemented
   typos.py       noise model for typo-robust fine-tuning
-  train.py       continued pretraining and fine-tuning (PyTorch)
+  train.py       continued pretraining (fine-tuning to follow) (PyTorch)            implemented
   export.py      safetensors, GGUF, model card
 ```
 
@@ -240,7 +242,7 @@ Environment: PyTorch 2.11 (CUDA 12.8) and transformers 5.22 on the RTX 5070 Ti l
 | n-gram, unpruned | 23 MB | 31.86% | **24.82%** | 25.49% |
 | Pythia-14M | 14.1M | 28.51% | 21.75% | 33.56% |
 | Pythia-31M | 30.5M | 31.17% | 22.91% | 36.55% |
-| **Supra2-Medium-Base** | 25.4M | 33.55% | 23.00% | 38.59% |
+| **Supra2-Medium-Base** | 25.4M | 33.47% | 22.84% | 38.58% |
 | Supra-50M-Base, simulated Q4_0 | 51.8M | 35.03% | 23.44% | 41.04% |
 | Supra-50M-Base | 51.8M | **35.62%** | 24.11% | **42.13%** |
 
@@ -249,7 +251,7 @@ Per source, KSR / acc@0:
 | Model | SODA | WildChat | oasst2 | IRC | FineWeb |
 |---|---|---|---|---|---|
 | n-gram, unpruned | **38.55% / 30.60%** | 28.87% / 17.95% | 29.04% / 19.30% | **24.82%** / 13.95% | 25.49% / 16.50% |
-| Supra2-Medium-Base | 34.10% / 25.95% | 30.85% / 20.55% | 35.87% / 25.10% | 23.00% / 13.25% | 38.59% / 27.85% |
+| Supra2-Medium-Base | 33.96% / 26.00% | 30.98% / 20.60% | 35.65% / 25.15% | 22.84% / 13.30% | 38.58% / 27.85% |
 | Supra-50M-Base, simulated Q4_0 | 36.27% / 28.00% | 32.59% / 21.80% | 36.49% / 26.40% | 23.44% / 15.20% | 41.04% / 28.85% |
 | Supra-50M-Base | 36.90% / 28.80% | **32.95% / 23.15%** | **37.29% / 26.55%** | 24.11% / **15.40%** | **42.13% / 29.60%** |
 
@@ -262,6 +264,8 @@ Per source, KSR / acc@0:
   13–20%. Quantized Supra-50M stays 0.4–2.5 points ahead of Supra2-Medium in full precision.
 - Latency on the GPU in this harness: 12–18 ms per query for Supra2-Medium, 16–26 ms for Supra-50M (some runs shared
   the GPU), dominated by per-step overhead; CPU latency with llama.cpp is measured in milestone 3.
+- The Supra2-Medium rows come from a rerun after a decoder fix: its tokenizer adds a space before every text, so the
+  first word of a text must be decoded as " word". The fix changed its results by at most 0.2 points.
 
 **Start marker.** Neither Supra model was trained with document separators, so `<s>` and `</s>` are untrained. Per-word
 perplexity on the dev splits by the text placed before each segment:
@@ -299,3 +303,33 @@ The gain comes almost entirely from completing partial words; next-word accuracy
 -> 29.16%, WildChat 21.26% -> 22.60%, IRC 13.84% -> 14.41%, FineWeb 14.26% -> 14.56%. A trigram model sees only
 the previous two words, so more size only adds rarer word combinations. The unpruned model is therefore the baseline
 for the success criteria (section 7).
+
+## 13. Milestone 1 results
+
+**Pilot.** `uv run lm/train.py --model SupraLabs/Supra2-Medium-Base --tokens 20e6 --out data/lm/runs/pilot-medium`:
+20M tokens (611 steps of 32,768), peak learning rate 6e-4, mix FineWeb 0.30, SODA 0.25, WildChat 0.25, IRC 0.15,
+oasst2 0.05, no trailing-space augmentation; 5.6 minutes at 59k tokens/s.
+
+Dev loss per token, before -> after: FineWeb 3.745 -> 3.762, SODA 2.848 -> 1.929, WildChat 4.494 -> 3.775, IRC
+4.722 -> 3.985, oasst2 3.767 -> 3.390 (part of the drop is the model learning the `</s>` separator). Still falling at
+the end of the decay.
+
+Typing benchmark (dev split, 2,000 words per source, thresholds 0.3 / 0.3, float32), KSR by domain:
+
+| Model | Chat | Casual (IRC) | Writing (FineWeb) |
+|---|---|---|---|
+| n-gram, unpruned (23 MB) | 31.86% (precision 50.5%) | 24.82% (43.9%) | 25.49% (41.5%) |
+| Supra2-Medium-Base, zero-shot | 33.47% (49.9%) | 22.84% (42.8%) | 38.58% (48.5%) |
+| **Pilot** | **40.30% (52.6%)** | **27.74% (44.8%)** | 37.48% (47.4%) |
+
+Per source, pilot KSR / acc@0 (change in acc@0 against the unpruned n-gram model): SODA 46.01% / 41.65% (+11.1),
+WildChat 36.34% / 24.75% (+6.8), oasst2 39.36% / 28.10% (+8.8), IRC 27.74% / 17.80% (+3.9), FineWeb 37.48% /
+26.85% (+10.4). Per-word perplexity: SODA 24.7, WildChat 228, oasst2 109, IRC 408, FineWeb 159 (zero-shot: 132, 805,
+250, 2,697, 141).
+
+- In full precision, the pilot already meets the v1 success criteria on chat: KSR 8.4 points above the unpruned
+  n-gram model at higher precision, and acc@0 6.8–11.1 points higher on every chat source. Still to show: the same
+  after GGUF quantization, and on the sealed test split.
+- Writing regresses slightly (KSR −1.1 points, perplexity +13%) as the model moves toward chat; it stays far above the
+  n-gram model.
+- SODA gains the most; it is synthetic and formulaic, so WildChat, oasst2 and IRC are the more telling numbers.
