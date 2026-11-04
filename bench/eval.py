@@ -41,7 +41,7 @@ from word_predictor.text import WORD_RE, normalize  # noqa: E402
 
 CORPUS = ROOT / "data" / "corpus"
 RESULTS = Path(__file__).resolve().parent / "results.jsonl"
-DOMAINS = {"chat": ("soda", "wildchat", "oasst2"), "writing": ("fineweb",)}
+DOMAINS = {"chat": ("soda", "wildchat", "oasst2"), "casual": ("irc",), "writing": ("fineweb",)}
 ACC_LENS = (0, 1, 2, 3)
 GRID = (0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5)
 
@@ -127,7 +127,7 @@ def main():
     ap = argparse.ArgumentParser(description="Chat / writing autocomplete benchmark")
     ap.add_argument("--model", type=Path, default=DEFAULT_MODEL, help="model file (default: the bundled en.bin)")
     ap.add_argument("--sources", nargs="+", default=[s for d in DOMAINS.values() for s in d],
-                    help="corpora to evaluate (default: soda wildchat oasst2 fineweb)")
+                    help="corpora to evaluate (default: soda wildchat oasst2 irc fineweb)")
     ap.add_argument("--limit", type=int, default=20000, help="max target words per source (0 = no limit)")
     ap.add_argument("--no-context", action="store_true", help="ablation: ignore the context")
     ap.add_argument("--learn", action="store_true", help="call learn() after each segment")

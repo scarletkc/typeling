@@ -49,6 +49,8 @@ class PredictorTest(unittest.TestCase):
         self.assertEqual(self.p.suggest("WHAT ARE YOU DOI"), "NG")
         self.assertTrue(self.p.topk("It works. ", 1)[0][0][0].isupper())  # capitalized at sentence start
         self.assertEqual(self.p.topk("Yesterday i", 1)[0][0][:1], "i")    # keeps the letters the user typed
+        for word, _ in self.p.topk("the ng", 8):                         # no mixed case like "ngOs"
+            self.assertTrue(word.islower(), word)
 
     def test_no_suggestion_after_punctuation(self):
         self.assertEqual(self.p.suggest("Hello,"), "")

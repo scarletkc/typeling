@@ -37,7 +37,7 @@ class _State:
 
 
 class Predictor:
-    def __init__(self, model=DEFAULT_MODEL, user=None, *, cache_weight=0.1, next_threshold=0.15,
+    def __init__(self, model=DEFAULT_MODEL, user=None, *, cache_weight=0.1, next_threshold=0.3,
                  complete_threshold=0.3, allow_blocked=False, use_context=True):
         self.lm = NgramModel(model)
         self.user = UserModel(user)
@@ -146,10 +146,13 @@ class Predictor:
         return partial, st, [(w, i, p / z) for p, w, i in top]
 
     def _display(self, w, i, partial, st):
-        """Lowercase word -> display form: keep the letters already typed and use the usual form for the rest;
-        capitalize at sentence start; continue in capitals if the typed letters are all caps."""
+        """Lowercase word -> display form: keep the letters already typed; continue in the word's usual form
+        if the typed letters match its casing (iPh -> iPhone), in lowercase otherwise (ng -> ngos, not ngOs),
+        and in capitals if the typed letters are all caps. Capitalize at sentence start."""
         form = self.user.forms.get(w) or (self.lm.form(i) if i is not None else st.cache_forms.get(w, w))
         if partial:
             tail = form[len(partial):]
-            return partial + (tail.upper() if len(partial) > 1 and partial.isupper() else tail)
+            if len(partial) > 1 and partial.isupper():
+                return partial + tail.upper()
+            return partial + (tail if form.startswith(partial) else tail.lower())
         return form[:1].upper() + form[1:] if st.sentence_start else form

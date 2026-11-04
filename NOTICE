@@ -19,6 +19,9 @@ following attributions when redistributing or using the model:
   https://huggingface.co/datasets/allenai/WildChat-1M
 - OpenAssistant Conversations Release 2 (OpenAssistant/oasst2), LAION — Apache License 2.0
   https://huggingface.co/datasets/OpenAssistant/oasst2
+- Ubuntu IRC logs (https://irclogs.ubuntu.com), released into the Public Domain, as packaged by
+  the Common Pile v0.1 (common-pile/ubuntu_irc_filtered), Kandpal et al. 2025
+  https://huggingface.co/datasets/common-pile/ubuntu_irc_filtered
 
 The words that the model never suggests by default are taken from the List of Dirty, Naughty,
 Obscene, and Otherwise Bad Words — CC BY 4.0
