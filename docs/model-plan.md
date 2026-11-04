@@ -4,7 +4,7 @@ Status: draft for review. Nothing in this document is implemented yet.
 
 ## 1. Goal
 
-Publish a small English causal language model, about 30 MB after quantization, that predicts what a person is about
+Publish a small English causal language model, about 37 MB after quantization, that predicts what a person is about
 to type: the rest of the current word, the next word, and occasionally a few words. It must be usable on its own,
 without this repository's autocomplete kernel: anyone should be able to load it with `transformers` or llama.cpp and
 run it on a CPU.
@@ -18,7 +18,7 @@ Decisions so far:
 |---|---|
 | Approach | the least-effort route: full-parameter continued pretraining of a recent small base model, not training from scratch |
 | Base model | `SupraLabs/Supra-50M-Base`, subject to the check in milestone 0 |
-| Size | about 30 MB: the release file is GGUF Q4_K_M; the fp16 weights are published as well |
+| Size | about 37.5 MB: the release file is GGUF Q4_K_M; the fp16 weights are published as well |
 | Data | v1 reuses the existing corpus in `data/corpus/`; more data only if the results show it is the bottleneck |
 | Data licenses | permissive only (public domain, CC BY, ODC-By, Apache-2.0); no NC or share-alike data |
 | Weights license | Apache-2.0 (the base model's license), with a NOTICE that carries the base model and dataset attributions |
@@ -29,9 +29,9 @@ Decisions so far:
 
 Candidates checked on Hugging Face (quality claims on the community model cards are unverified):
 
-| Model | Released | Parameters | Architecture | License | Pretraining data | Size at 4 bits | Verdict |
+| Model | Released | Parameters | Architecture | License | Pretraining data | Size at 4 bits (rough estimate) | Verdict |
 |---|---|---|---|---|---|---|---|
-| SupraLabs/Supra-50M-Base | 2026-05 | 51.8M | `LlamaForCausalLM` | Apache-2.0 | FineWeb-Edu, 20B tokens | about 30 MB | **chosen**: newest model with a standard architecture and clean data |
+| SupraLabs/Supra-50M-Base | 2026-05 | 51.8M | `LlamaForCausalLM` | Apache-2.0 | FineWeb-Edu, 20B tokens | 37.5 MB (measured, Q4_K_M) | **chosen**: newest model with a standard architecture and clean data |
 | harrrshall/BarunLM-35M | 2026-07 | 35.1M | custom (needs remote code) | Apache-2.0 | 5.7B tokens, educational mix | about 20 MB | custom architecture makes export and quantization harder |
 | MaliosDark/Isabel-50M | 2026-06 | 54.1M | `LlamaForCausalLM` | Apache-2.0 | educational text plus benchmark train splits | about 31 MB | fine-tuned on benchmark tasks, not a clean base |
 | EleutherAI/pythia-31m | 2023 | 30.5M | `GPTNeoXForCausalLM` | Apache-2.0 | the Pile (includes Books3) | about 16 MB (31 MB at int8) | fallback; old, weak, unclear data provenance |
@@ -43,8 +43,12 @@ size 512, intermediate size 1,408, 12 layers, 8 attention heads with 4 KV heads,
 embedding matrix is about 16M of the 52M parameters. It was trained only on educational web text and evaluated only
 on standard zero-shot benchmarks, so it knows nothing specific about chat or informal typing.
 
-Expected file sizes: fp16 `safetensors` about 104 MB, GGUF Q4_K_M about 30 MB. Milestone 3 measures how much 4-bit
-quantization costs.
+File sizes, measured on the official GGUF conversion of the instruct variant (`SupraLabs/supra-50m-instruct-gguf`,
+same architecture): f16 104.7 MB, Q8_0 56.2 MB, Q4_K_M 37.5 MB, Q4_K_S 35.7 MB, Q4_0 34.5 MB. 4-bit files are larger
+than 4 bits per weight suggests because llama.cpp keeps the tied embedding matrix (the output tensor) at 6 bits, and
+the MLP intermediate size (1,408) is not a multiple of 256, so the MLP down-projection cannot use K-quants. That
+repository also confirms that llama.cpp converts and quantizes this architecture; we still quantize our own
+fine-tuned weights. Milestone 3 measures how much 4-bit quantization costs.
 
 ## 3. Data
 
@@ -85,9 +89,12 @@ packing to 512 tokens, gradient clipping at 1.0.
 ## 5. Quantization and export
 
 - fp16 `safetensors` plus `config.json` and `tokenizer.json`, loadable with `transformers` as-is.
-- GGUF Q4_K_M (via llama.cpp's converter, which supports the Llama architecture): the 30 MB release file.
+- GGUF Q4_K_M (via llama.cpp's converter, which supports the Llama architecture): the 37.5 MB release file.
 - The Q4_K_M file is evaluated on the benchmark next to the fp16 weights; the model card reports the loss from
   quantization.
+- Only if that loss is significant: a short quantization-aware training phase at the end of training that simulates
+  GGUF Q4_0 block quantization (blocks of 32 weights with one scale each) in the forward pass, followed by a Q4_0
+  export (34.5 MB). This is the approach of Google's QAT releases of Gemma 3 for llama.cpp.
 
 ## 6. Decoding for typing
 
