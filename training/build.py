@@ -18,8 +18,9 @@ Corpora (permissive licenses only; attributions in NOTICE):
     oasst2    OpenAssistant/oasst2    Apache-2.0   real user-typed text: English user turns that look human-typed
     irc       common-pile/ubuntu_irc_filtered      Public Domain   informal internet chat: Ubuntu IRC messages
                                                    (non-technical-looking ones, 1.5M words from each of the 3 files)
-About 1% of each source is held out as the dev split and 1% as the test split, by content hash,
-so duplicate texts always land in the same split.
+About 1% of FineWeb, WildChat and IRC is held out as the dev split and 1% as the test split, by a hash of
+the document ID (FineWeb) or of the text (WildChat, IRC, so duplicate texts always land in the same split);
+SODA and oasst2 keep their official splits.
 """
 
 import argparse

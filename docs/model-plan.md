@@ -95,7 +95,7 @@ exact code that wrote them is not recorded. Cause unknown; the dev split looks l
 
 If the evaluation shows that more data would help, the next sources, in order of expected value: the remaining 30% of
 WildChat user turns, the rest of SODA, CC BY YouTube transcripts (`common-pile/youtube_filtered`, spoken language),
-more Ubuntu IRC, and CC BY news. New data from existing sources uses the same content-hash split, so the dev and test
+more Ubuntu IRC, and CC BY news. New data from existing sources uses the same hash split, so the dev and test
 splits do not change; any training document sharing a 13-gram with the dev or test splits is dropped.
 
 ## 4. Training

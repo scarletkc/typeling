@@ -120,10 +120,10 @@ InstructGPT; the user turns of WildChat-1M \citep{zhao-etal-2024-wildchat} and O
 the Common Pile \citep{kandpal-etal-2025-common}, informal internet chat. Emails, URLs and phone numbers are removed
 from FineWeb; WildChat, oasst2 and IRC keep only turns that look typed by a person and contain none of them, and
 WildChat also drops turns flagged as toxic or redacted. SODA is used as released. For FineWeb, WildChat and IRC, about
-1\% of the texts are held out as a development split and 1\% as a test split, by content hash. SODA and oasst2 keep
-their official splits (for SODA, the first 400 dialogues of its validation and test sets; oasst2's validation set is
-divided between development and test by message hash), so their development splits are about 0.3\% and 2.3\% of the
-size of their training splits. WildChat's development split came out about 23\% smaller than its test split (2,927
+1\% of the texts are held out as a development split and 1\% as a test split, by a hash of the document ID (FineWeb)
+or of the text (WildChat, IRC). SODA and oasst2 keep their official splits (for SODA, the first 400 dialogues of its
+validation and test sets; oasst2's validation set is divided between development and test by message hash), so their
+development splits are about 0.3\% and 2.3\% of the size of their training splits. WildChat's development split came out about 23\% smaller than its test split (2,927
 vs 3,805 turns), for a reason we could not determine; the two splits have the same share of long turns and of turns
 that share a 13-gram with the training split. All decisions in this paper were made on the
 development splits; the test splits were used once, for the final results (\S\ref{sec:final}). Results are pooled

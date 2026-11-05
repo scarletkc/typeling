@@ -215,8 +215,10 @@ uv run training/build.py          # both steps
 `typeling/en.bin`), `--budget BYTES` (default 5e6), `--min-count N` (drop n-grams seen fewer than N times,
 default 2) and `--workers N` (default 8).
 
-Each corpus is cleaned (emails, URLs and phone numbers are removed; chat sources keep only turns that look typed by a
-person), and about 1% is held out as the dev split and 1% as the test split by content hash.
+FineWeb has emails, URLs and phone numbers removed; WildChat, oasst2 and IRC keep only turns that look typed by a person
+and contain none of them; SODA is used as released. About 1% of FineWeb, WildChat and IRC is held out as the dev split
+and 1% as the test split, by a hash of the document ID (FineWeb) or of the text (WildChat, IRC); SODA and oasst2 keep
+their official splits.
 
 | Corpus | Dataset | License | Used for |
 |---|---|---|---|

@@ -251,7 +251,7 @@ A few mistakes and surprises came up while building this and while rechecking th
 1. **My benchmark initially gave ghost text credit for impossible corrections.** In `bench/eval.py`, `score()` originally checked whether the top candidate from `topk()` was the target word and beat the threshold. With typo repair turned on, `topk("See you tomm", 3)` returns `tomorrow` at 0.90 on top. `score()` counted that as an accepted ghost-text suggestion! But `suggest("See you tomm")` returns `""`, because inline ghost text can only append letters after the cursor; it cannot rewrite the second `m`. That bug inflated my ghost-text typo numbers with repair on (85.6% "corrected" on chat). In 0.1.1 I fixed `bench/eval.py` so ghost text only scores candidates that extend the typed prefix, matching `suggest()`. I did not rerun the typo runs afterwards, which is why this post reports typo results for the candidate bar, whose numbers the bug did not touch. Clean-text KSR is not affected either.
 2. **"Exact top 3" was not exact.** I wrote in the docstring and the first paper draft that stopping the beam search once no unfinished path can beat the 3rd-best word guarantees an exact top-3 list. It does not: any token path that fell out of the width-8 beam three steps ago is gone forever, and hidden-word filtering, the user model and n-gram fusion all run after the search finishes. Changing the beam from 6 to 8 changes the results by 0.1 to 0.6 points, which immediately disproves exactness.
 3. **An impossible example in my own notes.** Early on I noted that for `"I looked it up in the encyc"`, `encyclopedia` had probability 0.93 with n-gram fusion and was absent without it. When I redid the arithmetic, I saw it could not be right: the fusion weight is 0.1, so P = 0.9 · P_LM + 0.1 · P_ngram. Fusion can add at most 0.10 to any word! When I actually checked the released model with `ngram_weight=0`, `encyclopedia` was already sitting at 0.929. The real reason to keep n-gram fusion is pushing subword non-words out of the candidates, as in the `mich` example above, and even that is only partial: `muchfor` still flashes by in the demo GIF right after `"Thank you so much"` is accepted.
-4. **An unexplained data split anomaly.** I split FineWeb, WildChat and IRC into 98% train / 1% dev / 1% test by MD5 hash of the text. IRC (4,277 dev vs 4,142 test) and FineWeb (401 vs 434) came out balanced. WildChat came out with 2,927 turns in dev and 3,805 in test, 23% fewer in dev (~10 standard deviations). Every turn in both files hashes to the split it is in, there are no duplicates, the deficit is spread evenly across all ten dev hash buckets, and both splits have about the same share of 13+ word turns (51.0% vs 51.5%) and 13-gram overlap with train (12.8% both). The corpus files were written between two early commits of `training/build.py`, and the current code cannot produce that gap. It looks like a uniform random subsample, so I kept the split and documented the anomaly in the report.
+4. **An unexplained data split anomaly.** I split FineWeb, WildChat and IRC into 98% train / 1% dev / 1% test by MD5 hash (of the document ID for FineWeb, of the text for the other two). IRC (4,277 dev vs 4,142 test) and FineWeb (401 vs 434) came out balanced. WildChat came out with 2,927 turns in dev and 3,805 in test, 23% fewer in dev (~10 standard deviations). Every turn in both files hashes to the split it is in, there are no duplicates, the deficit is spread evenly across all ten dev hash buckets, and both splits have about the same share of 13+ word turns (51.0% vs 51.5%) and 13-gram overlap with train (12.8% both). The corpus files were written between two early commits of `training/build.py`, and the current code cannot produce that gap. It looks like a uniform random subsample, so I kept the split and documented the anomaly in the report.
 5. **The writing test sample is tiny in documents.** `--limit 2000` takes the first 2,000 target words of each split. For chat and IRC, 2,000 words span about 90 to 200 short turns per source. For FineWeb, 2,000 words are just three web articles (and 1,000 words for the typo test is a single article). System comparisons are paired on the exact same words, so the 8.5-point gap over the n-gram is on identical text, but absolute writing numbers move around across samples, and I have no confidence intervals (see Limitations).
 6. **Hugging Face model lineage is case-sensitive.** When I uploaded the GGUF repo with `base_model: scarletkc/Typeling-25M` in lowercase, Hugging Face silently failed to link it into the model tree on the main repo's page because my account is capitalized as `ScarletKc`. Fixing the casing linked them immediately.
 7. **llama.cpp's GGUF converter rejected the tokenizer hash.** `convert_hf_to_gguf.py` hashes the BPE pre-tokenizer configuration and refuses unknown hashes, and it also imports `sentencepiece` at the top level even for pure BPE models. Mapping the pre-tokenizer hash to GPT-2's (which uses the same regex) in `lm/export.py` produced a GGUF whose tokenization in llama.cpp matches Transformers token for token, with one quirk worth knowing: Transformers automatically prepends a space to the start of every string (`add_prefix_space`), while llama.cpp does not, so prompts passed to llama.cpp should start with `"</s> "` or a leading space.
@@ -296,19 +296,20 @@ typeling --lm     # Typeling-25M (downloads once from Hugging Face)
 Use it from Python (both classes have the exact same `suggest`, `topk`, `learn` and `save` methods):
 
 ```python
+# n-gram kernel
 from typeling import Predictor
 
-p = Predictor(user="user.json")      # n-gram kernel; user= is optional, for persistent learning
+p = Predictor(user="user.json")      # user= is optional: persistent learning
 p.suggest("Let me kn")               # 'ow'
 p.suggest("Thank you so ")           # 'much'
 p.learn("We deployed Zorblaxa.")     # adapts locally
 p.save()                             # writes user.json
 
-# With typeling[lm] installed, Typeling-25M has the same methods, plus typo repair in topk():
+# Typeling-25M, with typeling[lm]: same methods, plus typo repair in topk()
 from typeling.lm import LMPredictor
 
 p = LMPredictor()
-p.topk("See you tomm", 3)            # [('tomorrow', 0.90), ('tommy', 0.07), ...]
+p.topk("See you tomm", 3)            # [('tomorrow', 0.90), ...]
 ```
 
 What is next on the list:
