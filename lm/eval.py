@@ -34,9 +34,13 @@ and does not notice them; accepting the intended word corrects the error. Shorte
 depend only on the seed and the texts, so every model gets the same ones. Per source:
     KSR clean / KSR typos   ghost-text KSR with the default thresholds, typed correctly / with errors
     Drop                    KSR clean - KSR typos
-    Correct                 share of mistyped words that still end as the intended word (a suggestion of it was
-                            accepted, before or after the error, or after the whole misspelled word)
-    KSR@3, Correct@3        the same with the candidate bar (the intended word among the top 3)
+    Correct                 share of mistyped words that still end as the intended word: its ghost text was
+                            accepted, which can only happen before the error (ghost text extends the typed letters,
+                            so it never offers a correction)
+    KSR@3, Correct@3        the same with the candidate bar (the intended word among the top 3 at some step, before
+                            or after the error or after the whole misspelled word; corrections included)
+Results stored before the ghost-text rule above (docs/model-plan.md, section 14) count a correction on top as
+accepted ghost text, so their ghost-text KSR and Correct with typos are too high.
 Errors in the context are not simulated (earlier words are as in the text). At a typo rate r below 1, the KSR is
 about (1 - r) x KSR clean + r x KSR typos.
 """
@@ -54,8 +58,8 @@ import torch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from bench.eval import (BAR, DOMAINS, GRID, HEAD, RESULTS, cells, load, rank_of, score, score_bar,  # noqa: E402
-                        simulate, summarize)
+from bench.eval import (BAR, DOMAINS, GRID, HEAD, RESULTS, cells, ghost_conf, load, rank_of, score,  # noqa: E402
+                        score_bar, simulate, summarize)
 from decode import TypedPredictor  # noqa: E402
 from typeling import Predictor  # noqa: E402
 from typeling.text import WORD_RE  # noqa: E402
@@ -145,9 +149,10 @@ def simulate_misspelled(p, texts, limit, seed=0):
                 t0 = time.perf_counter()
                 cands = p.topk(before + typed[:i], BAR)
                 times.append(time.perf_counter() - t0)
-                ev.append((rank_of(w.lower(), cands), cands[0][1] if cands else 0.0))
-                if ev[-1][0] == 0 and ev[-1][1] >= GRID[-1]:
-                    break  # accepted under every threshold (and from the bar)
+                rank = rank_of(w.lower(), cands)
+                ev.append((rank, ghost_conf(cands, typed[:i])))
+                if rank == 0 and cands[0][1] >= GRID[-1]:
+                    break  # in the bar; as ghost text accepted now under every threshold or never (letters only grow)
             words.append(len(w))
             events.append(ev)
             bad.append(typed != w)

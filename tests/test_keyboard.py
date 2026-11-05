@@ -1,7 +1,8 @@
-"""Keyboard error model and demo editor tests: python -m unittest discover tests"""
+"""Keyboard error model, demo editor and benchmark tests: python -m unittest discover tests"""
 
 import unittest
 
+from bench.eval import ghost_conf
 from typeling import Predictor
 from typeling.demo import LineEditor
 from typeling.keyboard import NEIGHBORS, corrections
@@ -65,6 +66,14 @@ class LineEditorTest(unittest.TestCase):
             ed.feed(key)
         ed.feed("TAB")
         self.assertEqual(ed.text, "See you Tom")
+
+
+class BenchmarkTest(unittest.TestCase):
+    def test_ghost_text_only_extends_the_typed_letters(self):
+        self.assertEqual(ghost_conf([("tomorrow", 0.9)], "Tomo"), 0.9)
+        self.assertEqual(ghost_conf([("tomorrow", 0.9)], "tomm"), 0.0)   # a correction: candidate bar only
+        self.assertEqual(ghost_conf([("the", 0.9)], "the"), 0.0)         # nothing left to show
+        self.assertEqual(ghost_conf([], "x"), 0.0)
 
 
 if __name__ == "__main__":

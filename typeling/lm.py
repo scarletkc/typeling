@@ -9,9 +9,9 @@ interface as typeling.Predictor. Needs PyTorch and Transformers: pip install "ty
     p.topk("See you tomm", 3)           # -> [("tomorrow", 0.9), ...]            completion with typo repair
     p.suggest("Let me kn")              # -> "ow"   ghost text, "" when not confident
 
-Candidates: topk() is exact for the top EXACT candidates (the search runs until no unexplored path can beat the
-EXACT-th word); candidates after them are the other words the search reached, most probable first, and may miss
-words that a longer search would find.
+Candidates: topk()'s search runs until no hypothesis left in the beam can beat the EXACT-th word found so far;
+candidates after it are the other words the search reached, most probable first. None of them is exact: paths pruned
+from the beam are not revisited, and hidden words, the user model and n-gram fusion are applied after the search.
 
 Decoding: the text before the cursor is split into the context, the whitespace after it (the lead) and the partially
 typed word. Byte-level BPE attaches the space to the following word (" know"), so a context ending in a space would
@@ -35,9 +35,9 @@ have learned common misspellings such as "recieve" and would otherwise prefer th
 that do not start with the typed letters (tomm -> tomorrow); suggest() shows only extensions.
 
 N-gram fusion (ngram_weight > 0): the final probability is (1 - ngram_weight) x the language model's + ngram_weight x
-the bundled n-gram model's (typeling.Predictor, its top NGRAM_CANDIDATES words, 0 for the others). The n-gram model
-knows rare words the language model's short search misses (encyclopedia) and pushes out non-words that the language
-model's subword pieces can form (don'tknow).
+the bundled n-gram model's (typeling.Predictor, its top NGRAM_CANDIDATES words, 0 for the others), so it adds at most
+ngram_weight to any word. It pushes down non-words that the language model's subword pieces can form (don'tknow,
+muchfor).
 
 User model (user=path; learn(), save()): the words and word pairs the user typed, in typeling.Predictor's format
 (typeling.user.UserModel). It is mixed into the joint probabilities before they are normalized over the words that
@@ -69,7 +69,7 @@ from .text import normalize, split_input
 from .user import UserModel
 
 DEFAULT_LM = "ScarletKc/Typeling-25M"
-EXACT = 3              # topk() is exact for this many candidates
+EXACT = 3              # topk() searches until this many candidates are settled within the beam
 NGRAM_CANDIDATES = 8   # n-gram words fused per query
 CONTEXT_CHARS = 1000   # default: at most this many characters before the cursor are used (2,000 cost 0.1 KSR
                        # points less on long texts but up to 40% more time per query on a CPU)

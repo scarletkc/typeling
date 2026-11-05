@@ -11,8 +11,9 @@ save and how often the displayed suggestions are right.
 
 Simulation, per target word (every English word in the text, apostrophes included):
     "type" 0, 1, 2, ... letters and call topk(text before the cursor, 3) at each step.
-    Ghost text: when the top candidate is the target and its probability passes the display threshold,
-    the user presses Tab to accept it (1 keystroke).
+    Ghost text: when the top candidate is the target, extends the typed letters (as suggest() requires; a
+    correction such as tomm -> tomorrow is offered only in the candidate bar) and its probability passes the
+    display threshold, the user presses Tab to accept it (1 keystroke).
     Candidate bar: the top 3 candidates are always shown; when the target is among them, the user picks it
     (1 keystroke, a tap or a shortcut).
     Cost of a word = min(letters typed + 1, word length), or the word length if never accepted.
@@ -65,10 +66,19 @@ def rank_of(word, cands):
     return next((r for r, (c, _) in enumerate(cands[:BAR]) if c.lower() == word), BAR)
 
 
+def ghost_conf(cands, typed):
+    """Probability of the top candidate if suggest() could show it as ghost text after the typed letters (longer than
+    them and starting with them, case-insensitive), else 0."""
+    if not cands:
+        return 0.0
+    w, conf = cands[0]
+    return conf if len(w) > len(typed) and w.lower().startswith(typed.lower()) else 0.0
+
+
 def simulate(p, texts, limit, learn, vocab=None):
-    """Simulate typing word by word, recording (rank of the target among the candidates, top candidate's probability)
-    at every step; thresholds are applied later in score(). vocab: the model's word vocabulary for the OOV rate
-    (None for subword models, which have no out-of-vocabulary words)."""
+    """Simulate typing word by word, recording (rank of the target among the candidates, ghost_conf()) at every step;
+    thresholds are applied later in score(). vocab: the model's word vocabulary for the OOV rate (None for subword
+    models, which have no out-of-vocabulary words)."""
     words, events = [], []
     hit = dict.fromkeys(ACC_LENS, 0)
     top3 = dict.fromkeys(ACC_LENS, 0)
@@ -85,7 +95,7 @@ def simulate(p, texts, limit, learn, vocab=None):
                 cands = p.topk(before + m.group()[:i], BAR)
                 times.append(time.perf_counter() - t0)
                 rank = rank_of(w, cands)
-                conf = cands[0][1] if cands else 0.0
+                conf = ghost_conf(cands, m.group()[:i])
                 if i in hit:
                     seen[i] += 1
                     hit[i] += rank == 0

@@ -73,7 +73,8 @@ print([tok.decode(i) for i in top])  # [' much', ' ', ' very']
 Typing simulation on held-out test splits that were not used for any decision: for every word, the simulated user
 types 0, 1, 2, ... letters and accepts the suggestion with one keystroke as soon as it is right.
 
-- **KSR** (keystroke savings rate) with ghost text: the top suggestion is shown when its probability is at least 0.3.
+- **KSR** (keystroke savings rate) with ghost text: the top suggestion is shown when its probability is at least 0.3
+  and it extends the typed letters.
 - **KSR@3** with a candidate bar: the top 3 candidates are always shown.
 - 2,000 words per source. Chat is SODA, WildChat and oasst2, casual is Ubuntu IRC, writing is FineWeb.
 
@@ -98,14 +99,18 @@ Next word, before any letter is typed: the right word on top / among the top 3.
 | FineWeb | 15.0% / 27.1% | 24.8% / 37.7% |
 
 Typing errors: the same simulation with every word of 3+ letters mistyped (one error, two in one word out of five;
-1,000 words per source). KSR typed correctly -> with errors, and the share of mistyped words that still end correct.
+1,000 words per source). KSR@3 typed correctly -> with errors, and the share of mistyped words whose intended word
+is picked from the candidate bar. Corrections appear only in the bar: ghost text extends what was typed.
 
 | | n-gram, 5 MB | Typeling-25M |
 |---|---|---|
-| Chat, ghost text | 32.1% -> 22.7% (48.5%) | 44.5% -> 40.1% (85.6%) |
-| Chat, candidate bar | 49.6% -> 40.5% (71.0%) | 59.4% -> 55.7% (94.5%) |
-| Casual, ghost text | 22.5% -> 14.8% (36.9%) | 28.6% -> 23.1% (73.1%) |
-| Writing, ghost text | 24.3% -> 15.7% (40.9%) | 33.7% -> 27.9% (78.5%) |
+| Chat | 49.6% -> 40.5% (71.0%) | 59.4% -> 55.7% (94.5%) |
+| Casual | 39.1% -> 29.3% (57.8%) | 46.5% -> 41.3% (88.4%) |
+| Writing | 42.3% -> 32.0% (62.9%) | 50.8% -> 45.5% (90.5%) |
+
+The errors come from the same keyboard model that the repair undoes, and earlier words are never mistyped, so these
+numbers are optimistic. At a realistic share of mistyped words, repair saves few keystrokes; its benefit is that
+mistyped words end correct.
 
 Perplexity per word on the test splits: SODA 17.7, WildChat 180, oasst2 107, Ubuntu IRC 323, FineWeb 175.
 
@@ -126,7 +131,8 @@ tokens/s for prompts and 2,800 tokens/s for single-token steps on the same 4 thr
   - In 1% of words, `" word"` was re-tokenized as `" "` + `"word"`, so the model also continues text that ends in a
     space.
 - **Data:** chat and writing, each corpus cleaned of emails, URLs and phone numbers; chat sources keep only turns that
-  look typed by a person. 1% of each corpus is held out for development and 1% for testing.
+  look typed by a person. About 1% of FineWeb, WildChat and IRC is held out for development and 1% for testing;
+  SODA and oasst2 keep their official splits.
 
 | Corpus | License | Words | Share of training |
 |---|---|---|---|
@@ -136,8 +142,8 @@ tokens/s for prompts and 2,800 tokens/s for single-token steps on the same 4 thr
 | [Ubuntu IRC](https://huggingface.co/datasets/common-pile/ubuntu_irc_filtered) | Public Domain | 4.4M | 17% |
 | [OpenAssistant oasst2](https://huggingface.co/datasets/OpenAssistant/oasst2) (user turns) | Apache-2.0 | 0.4M | 1% |
 
-A 40M-token fine-tuning run on synthetic typos was also tried. It was worse than repairing typos in the decoder on
-both clean and mistyped text, so this model does not include it. The full plan, experiments and results are in
+A 40M-token fine-tuning run on synthetic typos was also tried. Decoded in its own typed mode, it was worse than this
+model with typo repair in the decoder on both clean and mistyped text, so this model does not include it. The full plan, experiments and results are in
 [docs/model-plan.md](https://github.com/scarletkc/typeling/blob/master/docs/model-plan.md).
 
 ## Intended use and limitations

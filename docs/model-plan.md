@@ -454,9 +454,12 @@ typing of the same words. Ghost-text KSR, clean -> with typos (share of mistyped
   corrections, not in raw keystrokes.
 - The benchmark is optimistic: the errors use `typeling.keyboard`'s layout and error types, the ones the repair
   inverts; context words are never mistyped; Correct also counts words accepted before the error (hence 48–62%
-  without repair); and `score()` counts the top candidate as accepted ghost text even when it is a correction that
-  does not extend the typed letters, which `suggest()` never shows. With typos, ghost-text KSR and Correct are
-  therefore upper bounds for `suggest()`; KSR@3 and Correct@3 match `topk()`.
+  without repair); and all runs in this document counted the top candidate as accepted ghost text even when it was
+  a correction that does not extend the typed letters, which `suggest()` never shows. With typos, their ghost-text
+  KSR and Correct are therefore upper bounds for `suggest()`; KSR@3 and Correct@3 match `topk()`. The benchmark now
+  follows `suggest()` (`bench/eval.py` `ghost_conf()`): ghost text can then accept a mistyped word only before the
+  error. Clean KSR is unchanged; clean precision rises slightly (a top candidate that cannot be shown no longer
+  counts as a wrong suggestion). The runs were not repeated.
 
 **Typo fine-tuning experiment.** `uv run lm/typos.py --model data/lm/runs/cpt-150m --out data/lm/tokens/typo` (600k
 examples, 47% with errors), then 40M tokens from cpt-150m (1,221 steps, lr 3e-4, half typo examples with the loss on

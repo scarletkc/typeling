@@ -66,7 +66,7 @@ from typeling.lm import LMPredictor
 p = LMPredictor()                    # downloads ScarletKc/Typeling-25M once; or a repo id / local directory
 p.topk("See you tomm", 3)            # [('tomorrow', ...), ...]  corrections are candidates too
 p.suggest("Let me kn")               # 'ow'    ghost text only extends what was typed
-p.topk("I'm going to ", 5)           # the top 3 are exact, further candidates are best effort
+p.topk("I'm going to ", 5)           # the search is tuned for the top 3, further candidates are best effort
 ```
 
 `LMPredictor(model, user)` takes the same user model file as `Predictor`, with the same `learn()` and `save()`. It
@@ -119,7 +119,8 @@ Learned words are stored in `~/.typeling/user.json` (used by both models) and sa
 
 `bench/eval.py` simulates typing the held-out dev split of each corpus (created by `uv run training/build.py fetch`)
 and reports how much the suggestions help. For each word it "types" 0, 1, 2, ... letters; when the top suggestion is
-the target word and passes the display threshold, the simulated user accepts it with one keystroke (ghost text);
+the target word, extends the typed letters and passes the display threshold, the simulated user accepts it with one
+keystroke (ghost text);
 with a candidate bar, the user picks the target with one keystroke as soon as it is among the top 3. `lm/eval.py`
 runs the same simulation on the language model, and `--typos` repeats it with every word mistyped.
 
@@ -165,8 +166,9 @@ KSR@3 with a bar of 3 candidates):
 | casual (Ubuntu IRC) | 22.7% / 38.9% | 24.4% / 40.4% | **29.8% / 46.8%** |
 | writing (FineWeb) | 22.3% / 40.6% | 23.9% / 41.5% | **32.4% / 49.9%** |
 
-With every word of 3+ letters mistyped, chat KSR drops from 32.1% to 22.7% with the n-gram kernel and from 44.5% to
-40.1% with Typeling-25M, which repairs the errors (86% of the mistyped words end correct, against 48%). Next-word
+With every word of 3+ letters mistyped, chat KSR@3 drops from 49.6% to 40.5% with the n-gram kernel and from 59.4%
+to 55.7% with Typeling-25M, which repairs the errors among its candidates: the intended word is picked from the bar
+for 94.5% of the mistyped words, against 71.0%. Ghost text only extends what was typed, so it cannot correct. Next-word
 accuracy, typo results per domain, latency and training details are in the
 [model card](https://huggingface.co/ScarletKc/Typeling-25M) and [docs/model-plan.md](docs/model-plan.md).
 

@@ -170,11 +170,13 @@ a share $r$ of mistyped words, KSR is about $(1-r)$ times the clean KSR plus $r$
 
 The typo results are optimistic in two ways. The errors are drawn with the same keyboard layout and error types that
 the decoder's repair undoes (\S\ref{sec:decoder}), so the benchmark measures repair on the errors it was designed
-for. And ghost text counts the top candidate as accepted whenever it is the intended word, even when it is a
-correction that does not extend the typed letters, while the released \texttt{suggest()} shows only extensions
-(\S\ref{sec:decoder}). With typos, ghost-text KSR and Correct therefore overstate what \texttt{suggest()} achieves,
-by an amount we did not measure. Clean-text KSR is unaffected, and the candidate-bar numbers correspond to
-\texttt{topk()} as released.
+for. And in the runs reported here, ghost text counted the top candidate as accepted whenever it was the intended
+word, even when it was a correction that does not extend the typed letters, while \texttt{suggest()} shows only
+extensions (\S\ref{sec:decoder}). With typos, ghost-text KSR and Correct therefore overstate what \texttt{suggest()}
+achieves, by an amount we did not measure. The released benchmark now follows \texttt{suggest()}, under which ghost
+text can accept a mistyped word only before the error, but the runs were not repeated. Clean-text KSR is unaffected
+(clean precision is, if anything, slightly understated), and the candidate-bar numbers correspond to \texttt{topk()}
+as released.
 
 \paragraph{Baselines.} Typeling includes a pure-Python n-gram kernel: an interpolated modified Kneser--Ney trigram
 model \citep{kneser-ney-1995-improved,chen-goodman-1999-empirical} over a 60,000-word vocabulary, without the bigrams
@@ -507,7 +509,7 @@ its memory, startup time and long-context latency, which a llama.cpp port of the
   repeated runs on other samples. The decoder ablations (0.1--0.4 points) cannot be told apart from noise.
   \item \textbf{Optimistic typo benchmark.} The errors come from the same keyboard model that the repair inverts, the
   context is never mistyped, Correct includes words accepted before the error, and ghost-text results with typos
-  count corrections that \texttt{suggest()} does not show (\S\ref{sec:benchmark}).
+  counted corrections that \texttt{suggest()} does not show (\S\ref{sec:benchmark}).
   \item \textbf{Decoder contribution not isolated.} No simpler token-to-word decoding was run as a baseline.
   \item \textbf{One typo fine-tuning recipe.} A single run of one recipe, evaluated only with its typed decoding
   mode.
@@ -545,7 +547,7 @@ a blocklist, but other harmful completions are possible.
 
 Test splits, the first 1,000 words per source (for FineWeb, one document): keystroke savings (\%) clean $\to$ with
 every word of three or more letters mistyped, and in parentheses Correct. With typos, the ghost-text (KSR) rows
-count accepted corrections that \texttt{suggest()} does not show (\S\ref{sec:benchmark}); the KSR@3 rows match
+counted accepted corrections that \texttt{suggest()} does not show (\S\ref{sec:benchmark}); the KSR@3 rows match
 \texttt{topk()}.
 
 \begin{center}
@@ -584,6 +586,8 @@ fourth are corrections, so they appear in \texttt{topk()} and the candidate bar 
 The repository contains the corpus builder (\texttt{training/build.py}), the tokenizer and training scripts
 (\texttt{lm/data.py}, \texttt{lm/train.py}), the benchmark (\texttt{bench/eval.py}, \texttt{lm/eval.py}), the
 export to safetensors and GGUF (\texttt{lm/export.py}), and \texttt{docs/model-plan.md}, which records every run
-in this paper with its command and results; \texttt{bench/results.jsonl} stores the raw benchmark output.
+in this paper with its command and results; \texttt{bench/results.jsonl} stores the raw benchmark output. All
+results were produced before the ghost-text rule of the benchmark was changed to follow \texttt{suggest()}
+(\S\ref{sec:benchmark}).
 
 \end{document}
