@@ -97,6 +97,7 @@ def simulate(p, texts, limit, learn, vocab=None):
         "top3@0": top3 / max(1, len(words)),
         "oov": oov / max(1, len(words)),
         "us_mean": sum(times) / max(1, len(times)) * 1e6,
+        "us_p95": times[int(len(times) * 0.95)] * 1e6 if times else 0.0,
         "us_p99": times[int(len(times) * 0.99)] * 1e6 if times else 0.0,
     }
     return words, events, stats

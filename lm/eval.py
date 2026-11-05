@@ -122,6 +122,9 @@ def main():
     ap.add_argument("--start", default=None,
                     help=r"text marking the beginning of a text, escapes allowed (\n); default: the EOS token")
     ap.add_argument("--dtype", choices=("float32", "bfloat16"), default="float32")
+    ap.add_argument("--device", default=None, help="cuda or cpu (default: cuda if available)")
+    ap.add_argument("--threads", type=int, default=None, help="CPU threads (default: PyTorch's default)")
+    ap.add_argument("--no-ppl", action="store_true", help="skip the perplexity pass (for quick latency runs)")
     ap.add_argument("--simulate-q4", action="store_true",
                     help="round the weights as GGUF Q4_0 does (a pessimistic stand-in for Q4_K_M)")
     ap.add_argument("--ppl-only", action="store_true", help="only perplexity and tokens per word")
@@ -134,13 +137,16 @@ def main():
 
     split = "test" if args.final else "dev"
     start = args.start.encode().decode("unicode_escape") if args.start is not None else None
+    if args.threads:
+        torch.set_num_threads(args.threads)
     t0 = time.perf_counter()
-    p = LMPredictor(args.model, dtype=getattr(torch, args.dtype), start=start, beam=args.beam)
+    p = LMPredictor(args.model, device=args.device, dtype=getattr(torch, args.dtype), start=start, beam=args.beam)
     load_ms = (time.perf_counter() - t0) * 1000
     if args.simulate_q4:
         simulate_q4(p.model)
+    device = p.device + (f" ({torch.get_num_threads()} threads)" if p.device == "cpu" else "")
     print(f"Model {args.model} ({p.params / 1e6:.1f}M parameters, {args.dtype}"
-          + (", simulated Q4" if args.simulate_q4 else "") + f", {p.device}, loaded in "
+          + (", simulated Q4" if args.simulate_q4 else "") + f", {device}, loaded in "
           f"{load_ms:.0f} ms), start marker {p.start!r}, beam {p.beam}, {split} split, "
           f"thresholds: next word {p.next_threshold} / completion {p.complete_threshold}")
     if args.probe:
@@ -151,13 +157,13 @@ def main():
         print("| Source | PPL/word | Tok/word |\n|---|---|---|")
     else:
         print("| Source | Words | KSR | Precision | Shown | KSR (always shown) | acc@0 | acc@1 | acc@2 | acc@3 | top3@0 "
-              "| PPL/word | Tok/word | ms/query (p99) |")
+              "| PPL/word | Tok/word | ms/query (p95 / p99) |")
         print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     pooled = {d: ([], []) for d in DOMAINS}
     rows = []
     for src in args.sources:
         texts = load(src, split)
-        ppl, tpw = perplexity(p, texts)
+        ppl, tpw = (math.nan, math.nan) if args.no_ppl and not args.ppl_only else perplexity(p, texts)
         if args.ppl_only:
             print(f"| {src} | {ppl:.1f} | {tpw:.2f} |", flush=True)
             rows.append({"source": src, "ppl_word": ppl, "tokens_per_word": tpw})
@@ -170,8 +176,8 @@ def main():
         rows.append({"source": src, **st, **s, "ksr_always": s0["ksr"], "ppl_word": ppl, "tokens_per_word": tpw})
         print(f"| {src} | {st['words']:,} | {s['ksr']:.2%} | {s['precision']:.1%} | {s['shown']:.2f} | "
               f"{s0['ksr']:.2%} | {st['acc@0']:.2%} | {st['acc@1']:.2%} | {st['acc@2']:.2%} | {st['acc@3']:.2%} | "
-              f"{st['top3@0']:.2%} | {ppl:.1f} | {tpw:.2f} | {st['us_mean'] / 1000:.1f} ({st['us_p99'] / 1000:.1f}) |",
-              flush=True)
+              f"{st['top3@0']:.2%} | {ppl:.1f} | {tpw:.2f} | {st['us_mean'] / 1000:.1f} "
+              f"({st['us_p95'] / 1000:.1f} / {st['us_p99'] / 1000:.1f}) |", flush=True)
     for d, (words, events) in pooled.items():
         if words:
             s, s0 = score(words, events, p.next_threshold, p.complete_threshold), score(words, events, 0, 0)
@@ -189,7 +195,7 @@ def main():
     if not args.no_save:
         with RESULTS.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"time": datetime.now().isoformat(timespec="seconds"), "split": split,
-                                "model": args.model, "params": p.params, "dtype": args.dtype,
+                                "model": args.model, "params": p.params, "dtype": args.dtype, "device": device,
                                 "simulate_q4": args.simulate_q4, "start": p.start,
                                 "beam": p.beam, "t_next": p.next_threshold, "t_complete": p.complete_threshold,
                                 "limit": args.limit, "ppl_only": args.ppl_only, "load_ms": load_ms,

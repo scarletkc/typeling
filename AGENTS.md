@@ -22,6 +22,7 @@ uv run lm/data.py --model SupraLabs/Supra2-Medium-Base                # tokenize
 uv run lm/data.py --model SupraLabs/Supra2-Medium-Base --space-split 0.01   # with the trailing-space augmentation (+space0.01)
 uv run lm/train.py --model SupraLabs/Supra2-Medium-Base --tokens 20e6 --out data/lm/runs/pilot   # continued pretraining (about 60k tokens/s)
 uv run lm/eval.py --model data/lm/runs/pilot                          # typing benchmark of a trained checkpoint (start marker: </s>)
+uv run lm/eval.py --model data/lm/runs/pilot --device cpu --threads 4 --no-ppl --limit 300 --no-save   # CPU latency (p95 / p99)
 uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --start '\n'   # zero-shot base model (never saw </s>; use a newline)
 uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --ppl-only     # perplexity and tokens per word only
 uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --probe        # example suggestions and tokenizations
