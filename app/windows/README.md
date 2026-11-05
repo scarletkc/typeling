@@ -5,8 +5,9 @@ exists to test whether this works across applications and helps in real typing; 
 
 - `tip/`: the text service, a Rust DLL built on the Text Services Framework (TSF). It is loaded into each application,
   reads the text before the cursor and draws the candidate bar. Letters reach the application untouched.
-- `engine.py`: the prediction engine, a separate process running the bundled n-gram model. The DLL talks to it over a
-  named pipe from a worker thread, so a slow or stopped engine never holds up typing: the bar just does not appear.
+- `engine.py`: the prediction engine, a separate process running the bundled n-gram model or Typeling-25M. The DLL
+  talks to it over a named pipe from a worker thread, so a slow or stopped engine never holds up typing: the bar just
+  does not appear.
 
 ## Keys
 
@@ -49,6 +50,29 @@ To remove it, from an elevated PowerShell:
 pwsh -File app/windows/uninstall.ps1
 ```
 
+## Typo repair
+
+Typeling-25M also repairs typing slips: `See you tomm` offers *tomorrow*, and accepting it replaces the typed letters.
+It needs PyTorch and Transformers, which uv can provide without installing them. Stop the running engine first, because
+only one can run at a time:
+
+```bash
+uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" --index https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match python app/windows/engine.py --lm
+```
+
+`--lm` downloads the model from Hugging Face once and asks for its latest revision at each start; `--lm DIR` uses a local
+copy and makes no such request. Typed text is never sent. It runs on the CPU with 4 threads by default (`--device`,
+`--threads`).
+
+The bar mixes the two models. The first place is the language model's best word, fused with the n-gram model as usual;
+that can be the word already typed, in which case accepting it changes nothing. The other places prefer common words,
+because beyond its best guess the language model tends toward specific or rare words. A word under 2% likely must extend
+the typed letters or the first word, which keeps the bar full but drops unrelated corrections. Only words in the n-gram
+model's vocabulary are offered, because the language model also reaches non-words through its subword pieces.
+
+Measured once on the development laptop through the pipe, typing 576 keystrokes: 23 ms per keystroke on average, 50 ms at
+p99, and about 490 MB of memory. A release would run the model with llama.cpp instead of PyTorch.
+
 ## Privacy
 
 No field gets predictions if it is marked as a password or PIN or is read-only. Windows of elevated applications get
@@ -73,7 +97,9 @@ installing.
 
 ## Known limits
 
-- Candidates come from the n-gram model, so there is no typo repair; Typeling-25M is not connected yet.
+- Typo repair needs `--lm`, and it covers typing slips (adjacent keys; missing, extra and swapped letters), not
+  misspellings by sound: `definately` and `pleese` get no useful candidates, and a misspelling that made it into the
+  vocabulary can still be offered (`seperate` offers *seperately*).
 - The engine is started by hand, and nothing is learned from what you type.
 - Only 64-bit desktop applications: 32-bit applications cannot load the DLL, and sandboxed (AppContainer) Store apps
   cannot reach the DLL or the pipe. They keep working, without candidates.

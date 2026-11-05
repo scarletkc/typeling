@@ -1,17 +1,21 @@
 """
 Prediction engine for the Windows input method prototype: answers the text service DLL over a named pipe.
 
-    python app/windows/engine.py        # keep it running while typing; Ctrl+C stops it
+    python app/windows/engine.py                # the n-gram model; keep it running while typing, Ctrl+C stops it
+    python app/windows/engine.py --lm           # Typeling-25M with typo repair (needs typeling[lm]); --lm DIR for a
+                                                # local model, which also means no request to Hugging Face at start
 
 Each message is a little-endian u32 length followed by that many bytes of UTF-8.
     Request:  the text before the cursor
     Reply:    lines: the length of the partly typed word in UTF-16 units, then up to 3 candidate words
 
 Typed text stays in memory for the length of one request: it is not logged, learned or written to disk.
-Standard library only, like the rest of the runtime.
+Standard library only, like the rest of the runtime, except for --lm.
 """
 
+import argparse
 import ctypes
+import functools
 import os
 import struct
 import sys
@@ -29,8 +33,38 @@ except ImportError:  # running from a checkout without the package installed
 
 PIPE_NAME = r"\\.\pipe\LOCAL\typeling-engine"  # LOCAL: visible to this logon session only
 CANDIDATES = 3
+SEARCHED = 12  # words asked of the predictor, to still have enough after dropping some
+# The language model's second and third places (tuned on the dev split): see choose_candidates().
+MIN_PROBABILITY = 0.02  # less likely words must be related to the typed letters or the first word
+RARITY_POWER = 0.8      # how strongly they prefer common words
+RANK_SMOOTHING = 50     # the most common words count as about equally common
 BUFFER_SIZE = 64 * 1024
 MAX_REQUEST = 64 * 1024  # the DLL sends at most 1,000 characters
+
+
+@functools.cache
+def word_ranks(lexicon):
+    """Lowercase word -> its frequency rank in the n-gram model's vocabulary, the most common word first."""
+    order = sorted(range(len(lexicon.words)), key=lambda i: -lexicon.p1[i])
+    return {lexicon.words[i]: rank for rank, i in enumerate(order)}
+
+
+def choose_candidates(ranked, partial, ranks, k=CANDIDATES):
+    """The language model's (word, probability) list, most probable first -> the words for the bar.
+    The first place is the model's best word, which is right far more often than the n-gram model's, and that may be
+    what is already typed: removing it would promote a word the model finds very unlikely (play -> playlists).
+    Beyond the first place the model has little to go on and tends toward specific or rare words, so the other places
+    prefer common words. Unlikely words must extend the typed letters or the first word, which keeps the bar full but
+    drops unrelated corrections (am -> made). The model builds words from subword pieces and also reaches non-words
+    (seperateinate, reallyoo); people use the bar to check their spelling, so it offers only words in the n-gram
+    model's vocabulary."""
+    known = [(w, p) for w, p in ranked if w.lower() in ranks]
+    if not known:
+        return []
+    stems = (partial.lower(), known[0][0].lower())
+    rest = [e for e in known[1:] if e[1] >= MIN_PROBABILITY or e[0].lower().startswith(stems)]
+    rest.sort(key=lambda e: e[1] / (ranks[e[0].lower()] + RANK_SMOOTHING) ** RARITY_POWER, reverse=True)
+    return [known[0][0], *(w for w, _ in rest[:k - 1])]
 
 
 def respond(predictor, text, k=CANDIDATES):
@@ -40,8 +74,12 @@ def respond(predictor, text, k=CANDIDATES):
     if sp is None:
         return 0, []
     partial = sp[1]
-    # A candidate equal to what is already typed would make accepting it a no-op.
-    words = [w for w, _ in predictor.topk(text, k + 1) if w != partial][:k]
+    ranked = predictor.topk(text, SEARCHED)
+    ngram = getattr(predictor, "ngram", None)
+    if ngram is None:
+        words = [w for w, _ in ranked][:k]
+    else:
+        words = choose_candidates(ranked, partial, word_ranks(ngram.lm), k)
     return len(partial.encode("utf-16-le")) // 2, words
 
 
@@ -136,6 +174,18 @@ if os.name == "nt":
             handle = _create_pipe(name, first=False)
 
 
+def load_predictor(args):
+    """-> (predictor, description) for the command-line options."""
+    if args.lm is None:
+        return Predictor(), "n-gram model"
+    from typeling.lm import LMPredictor  # needs typeling[lm]
+    import torch
+    torch.set_num_threads(args.threads)
+    predictor = LMPredictor(args.lm, device=args.device)
+    word_ranks(predictor.ngram.lm)  # now rather than on the first keystroke
+    return predictor, f"{args.lm} on {args.device}, {args.threads} threads"
+
+
 def main():
     if os.name != "nt":
         sys.exit("The input method prototype runs on Windows only.")
@@ -143,8 +193,14 @@ def main():
         # A pipe made by an elevated process refuses the normal applications that need to reach it.
         sys.exit("Start the engine from a normal terminal, not an elevated one: applications cannot connect to an "
                  "elevated engine.")
+    ap = argparse.ArgumentParser(description="Prediction engine for the Windows input method prototype")
+    ap.add_argument("--lm", metavar="MODEL", nargs="?", const="ScarletKc/Typeling-25M",
+                    help="use the language model: Typeling-25M from Hugging Face, or another repo id or directory")
+    ap.add_argument("--device", default="cpu", help="language model device: cpu (default) or cuda")
+    ap.add_argument("--threads", type=int, default=4, help="CPU threads for the language model (default 4)")
+    args = ap.parse_args()
     t0 = time.perf_counter()
-    predictor = Predictor()
+    predictor, description = load_predictor(args)
     ready = threading.Event()
     failed = []
 
@@ -161,7 +217,8 @@ def main():
     ready.wait()
     if failed:
         sys.exit(f"Could not create {PIPE_NAME}; is another engine already running? ({failed[0]})")
-    print(f"Typeling engine ready in {(time.perf_counter() - t0) * 1000:.0f} ms. Press Ctrl+C to stop.", flush=True)
+    print(f"Typeling engine ready in {(time.perf_counter() - t0) * 1000:.0f} ms ({description}). "
+          "Press Ctrl+C to stop.", flush=True)
     try:
         while thread.is_alive():
             time.sleep(0.5)

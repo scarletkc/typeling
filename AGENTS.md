@@ -44,6 +44,7 @@ uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" -
 cargo test --manifest-path app/windows/tip/Cargo.toml                 # unit tests and a TSF typing session against the real engine; installs nothing
 cargo build --release --manifest-path app/windows/tip/Cargo.toml      # text service DLL
 python app/windows/engine.py                                          # engine process the DLL talks to
+uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" --index https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match python app/windows/engine.py --lm data/release/Typeling-25M   # engine with Typeling-25M and typo repair
 ```
 
 ## Conventions
