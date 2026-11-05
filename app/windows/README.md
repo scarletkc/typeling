@@ -28,7 +28,8 @@ Building needs Rust with the MSVC toolchain; the engine needs Python 3.13.
 cargo build --release --manifest-path app/windows/tip/Cargo.toml
 ```
 
-From an elevated PowerShell, because this registers the DLL for the whole machine:
+From an elevated PowerShell, because this registers the DLL for the whole machine. It opens in `C:\Windows\System32`,
+so change to the repository folder first:
 
 ```bash
 pwsh -File app/windows/install.ps1
@@ -44,7 +45,7 @@ python app/windows/engine.py
 Then press Win+Space and choose Typeling, which is listed under English (United States). If it is not listed, add
 that language in Settings > Time & language > Language & region. Applications that were already open need a restart.
 
-To remove it, from an elevated PowerShell:
+To remove it, from an elevated PowerShell in the repository folder:
 
 ```bash
 pwsh -File app/windows/uninstall.ps1
@@ -105,3 +106,14 @@ installing.
   cannot reach the DLL or the pipe. They keep working, without candidates.
 - Text can be read and changed only where the application supports TSF. Terminals are not expected to work.
 - The DLL is not code-signed and there is no installer, tray icon or settings.
+
+## Roadmap
+
+In this order; none of it has started.
+
+1. A standalone engine that needs neither Python nor PyTorch and starts by itself. It would run the Q8_0 GGUF file with
+   llama.cpp and port the decoder in `typeling/lm.py`, including typo repair. Keystroke savings, typo repair, latency
+   and memory must hold up before it replaces the current engine.
+2. Repair of misspellings by sound (`definately`, `pleese`), which matters to non-native writers, the first target
+   users. It comes after the engine so that it is written only once.
+3. An installer and code signing, with a tray icon and settings.
