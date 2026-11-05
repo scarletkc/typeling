@@ -5,7 +5,7 @@ Offline English typing prediction: completes the word being typed, predicts the 
 The `typeling` package has two predictors with the same interface:
 
 - `typeling.Predictor`: a dependency-free n-gram kernel in pure Python with a bundled 5 MB model.
-- `typeling.lm.LMPredictor`: the typing decoder for [Typeling-25M](https://huggingface.co/scarletkc/Typeling-25M),
+- `typeling.lm.LMPredictor`: the typing decoder for [Typeling-25M](https://huggingface.co/ScarletKc/Typeling-25M),
   a 25M-parameter transformer language model trained for typing, with typo repair (optional extra
   `typeling[lm]`: PyTorch and Transformers).
 
@@ -63,7 +63,7 @@ With the language model:
 ```python
 from typeling.lm import LMPredictor
 
-p = LMPredictor()                    # downloads scarletkc/Typeling-25M once; or a repo id / local directory
+p = LMPredictor()                    # downloads ScarletKc/Typeling-25M once; or a repo id / local directory
 p.topk("See you tomm", 3)            # [('tomorrow', ...), ...]  corrections are candidates too
 p.suggest("Let me kn")               # 'ow'    ghost text only extends what was typed
 p.topk("I'm going to ", 5)           # the top 3 are exact, further candidates are best effort
@@ -168,7 +168,7 @@ KSR@3 with a bar of 3 candidates):
 With every word of 3+ letters mistyped, chat KSR drops from 32.1% to 22.7% with the n-gram kernel and from 44.5% to
 40.1% with Typeling-25M, which repairs the errors (86% of the mistyped words end correct, against 48%). Next-word
 accuracy, typo results per domain, latency and training details are in the
-[model card](https://huggingface.co/scarletkc/Typeling-25M) and [docs/model-plan.md](docs/model-plan.md).
+[model card](https://huggingface.co/ScarletKc/Typeling-25M) and [docs/model-plan.md](docs/model-plan.md).
 
 **The n-gram kernel** on the dev split, bundled 5.00 MB model, default thresholds (next word 0.3, completion 0.3),
 20,000 target words per source (oasst2: all 9,251), measured with `python bench/eval.py`:

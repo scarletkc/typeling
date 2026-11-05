@@ -25,7 +25,7 @@ tags:
 
 A small English language model for typing prediction: it completes the word being typed and predicts the next word,
 for ghost text or a candidate bar in chat and everyday writing. 25.4M parameters, 50.8 MB at 16 bits (27.6 MB as Q8_0
-in [Typeling-25M-GGUF](https://huggingface.co/scarletkc/Typeling-25M-GGUF)), about 25 ms per suggestion on a laptop
+in [Typeling-25M-GGUF](https://huggingface.co/ScarletKc/Typeling-25M-GGUF)), about 25 ms per suggestion on a laptop
 CPU.
 
 ## Quick start
@@ -38,7 +38,7 @@ typeling --lm                       # terminal demo: ghost text and a candidate 
 ```python
 from typeling.lm import LMPredictor
 
-p = LMPredictor()                   # downloads scarletkc/Typeling-25M
+p = LMPredictor()                   # downloads ScarletKc/Typeling-25M
 p.suggest("Let me kn")              # 'ow'
 p.topk("Thank you so ", 3)          # [('much', 0.98), ...]
 p.topk("See you tomm", 3)           # [('tomorrow', 0.90), ('tommy', 0.07), ...]   typos are repaired
@@ -55,8 +55,8 @@ learns the user's own words locally. All results below are with this decoder.
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-tok = AutoTokenizer.from_pretrained("scarletkc/Typeling-25M")
-model = AutoModelForCausalLM.from_pretrained("scarletkc/Typeling-25M")
+tok = AutoTokenizer.from_pretrained("ScarletKc/Typeling-25M")
+model = AutoModelForCausalLM.from_pretrained("ScarletKc/Typeling-25M")
 ids = [tok.eos_token_id] + tok("Thank you so", add_special_tokens=False)["input_ids"]
 top = model(torch.tensor([ids])).logits[0, -1].topk(3).indices
 print([tok.decode(i) for i in top])  # [' much', ' ', ' very']

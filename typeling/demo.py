@@ -280,7 +280,7 @@ def main():
         pass
     ap = argparse.ArgumentParser(prog="typeling", description="Terminal autocomplete demo")
     ap.add_argument("--no-learn", action="store_true", help="do not learn or save your words")
-    ap.add_argument("--lm", metavar="MODEL", nargs="?", const="scarletkc/Typeling-25M",
+    ap.add_argument("--lm", metavar="MODEL", nargs="?", const="ScarletKc/Typeling-25M",
                     help='use the language model (pip install "typeling[lm]"): Typeling-25M from Hugging Face, or '
                     "another repo id or directory")
     ap.add_argument("--device", default=None, help="language model device: cpu or cuda (default: cuda if available)")

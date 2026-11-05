@@ -2,7 +2,7 @@
 license: apache-2.0
 language:
 - en
-base_model: scarletkc/Typeling-25M
+base_model: ScarletKc/Typeling-25M
 base_model_relation: quantized
 pipeline_tag: text-generation
 tags:
@@ -17,7 +17,7 @@ tags:
 
 # Typeling-25M-GGUF
 
-[Typeling-25M](https://huggingface.co/scarletkc/Typeling-25M), a 25M-parameter English language model for typing
+[Typeling-25M](https://huggingface.co/ScarletKc/Typeling-25M), a 25M-parameter English language model for typing
 prediction, as a GGUF file for [llama.cpp](https://github.com/ggml-org/llama.cpp).
 
 | File | Size | Quality against 16-bit weights |
@@ -27,7 +27,7 @@ prediction, as a GGUF file for [llama.cpp](https://github.com/ggml-org/llama.cpp
 Measured with `llama-perplexity --kl-divergence` on 380k characters of held-out chat and web text (190 chunks of 512
 tokens), against an F16 conversion of the same weights. There is no 4-bit file: at this size Q4 would save about 10
 MB and small models lose more to 4-bit quantization. You can make one from the
-[16-bit weights](https://huggingface.co/scarletkc/Typeling-25M) with llama.cpp's `convert_hf_to_gguf.py` and
+[16-bit weights](https://huggingface.co/ScarletKc/Typeling-25M) with llama.cpp's `convert_hf_to_gguf.py` and
 `llama-quantize`.
 
 ## What the model is for
@@ -36,7 +36,7 @@ Typeling-25M predicts the rest of the word being typed and the next word, for gh
 and everyday writing. It is a small base model, not a chat or instruction model.
 
 The model predicts tokens, not words. The word-level suggestions, typo repair and benchmark results on the
-[main model card](https://huggingface.co/scarletkc/Typeling-25M) come from the Typeling decoder
+[main model card](https://huggingface.co/ScarletKc/Typeling-25M) come from the Typeling decoder
 ([`typeling/lm.py`](https://github.com/scarletkc/typeling/blob/master/typeling/lm.py), `pip install "typeling[lm]"`),
 which runs the 16-bit weights with PyTorch. With llama.cpp you get raw next-token predictions; the decoder is the
 reference for building word suggestions on top of them.
@@ -67,4 +67,4 @@ tokenizer's pre-tokenizer, which uses GPT-2's byte-level regex, so the export ma
 
 Apache License 2.0, like the base model
 [SupraLabs/Supra2-Medium-Base](https://huggingface.co/SupraLabs/Supra2-Medium-Base). The training data and its
-attributions are listed on the [main model card](https://huggingface.co/scarletkc/Typeling-25M) and in `NOTICE`.
+attributions are listed on the [main model card](https://huggingface.co/ScarletKc/Typeling-25M) and in `NOTICE`.

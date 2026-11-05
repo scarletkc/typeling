@@ -23,7 +23,7 @@ Decisions so far:
 | Name | Typeling; the model is Typeling-25M (the whole project is renamed accordingly) |
 | Approach | the least-effort route: full-parameter continued pretraining of a recent small base model, not training from scratch |
 | Base model | `SupraLabs/Supra2-Medium-Base` (25.4M parameters); fallback `SupraLabs/Supra-50M-Base` (section 2) |
-| Release files | `scarletkc/Typeling-25M` on Hugging Face: fp16 safetensors (about 51 MB); `scarletkc/Typeling-25M-GGUF`: GGUF Q8_0 (about 27 MB, estimate); no 4-bit file: users can quantize the safetensors further with llama.cpp |
+| Release files | `ScarletKc/Typeling-25M` on Hugging Face: fp16 safetensors (about 51 MB); `ScarletKc/Typeling-25M-GGUF`: GGUF Q8_0 (about 27 MB, estimate); no 4-bit file: users can quantize the safetensors further with llama.cpp |
 | Product | the `typeling` package on PyPI: the n-gram kernel (no dependencies) plus the language model decoder `typeling.lm` (extra `typeling[lm]`: PyTorch, Transformers) and a terminal demo with a candidate bar |
 | Data | v1 reuses the existing corpus in `data/corpus/`; more data only if the results show it is the bottleneck |
 | Data licenses | permissive only (public domain, CC BY, ODC-By, Apache-2.0); no NC or share-alike data |
@@ -206,7 +206,7 @@ a dependency of the runtime package.
 2. **Typos and the product** (done, section 14): typo benchmark, decoder typo repair, the typo fine-tuning experiment
    (not adopted), the decoder packaged as `typeling.lm` with a candidate bar and n-gram fusion, demo and tests.
 3. GGUF export (Q8_0), final evaluation on the test split against the baselines, CPU latency and memory.
-4. Release: `scarletkc/Typeling-25M` (fp16 safetensors, model card, NOTICE), `scarletkc/Typeling-25M-GGUF` (Q8_0),
+4. Release: `ScarletKc/Typeling-25M` (fp16 safetensors, model card, NOTICE), `ScarletKc/Typeling-25M-GGUF` (Q8_0),
    the GitHub repository made public, and the `typeling` package on PyPI.
 5. Optional: more data (section 3), if milestone 3 shows the corpus is the bottleneck.
 6. Optional: asynchronous two tiers like the Lexo keyboard: the n-gram model and the user model answer instantly,

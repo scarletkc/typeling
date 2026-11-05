@@ -43,8 +43,8 @@ uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" -
 - The runtime package must stay dependency-free; numpy, pyarrow and huggingface_hub are used only by
   `training/build.py` (uv inline script metadata). The one exception is `typeling/lm.py` (PyTorch, Transformers via
   the extra `typeling[lm]`); nothing else in the package may import it.
-- Release names: Hugging Face `scarletkc/Typeling-25M` (fp16 safetensors, the default of `LMPredictor()` and
-  `--lm`) and `scarletkc/Typeling-25M-GGUF` (Q8_0); PyPI `typeling`. Publishing (Hugging Face uploads, making the
+- Release names: Hugging Face `ScarletKc/Typeling-25M` (fp16 safetensors, the default of `LMPredictor()` and
+  `--lm`) and `ScarletKc/Typeling-25M-GGUF` (Q8_0); PyPI `typeling`. Publishing (Hugging Face uploads, making the
   GitHub repository public, PyPI) only on the user's explicit go-ahead.
 - When launching several background runs from PowerShell, do not pass arguments containing spaces through
   `Start-Process -ArgumentList` (it splits them); start each run as its own command.

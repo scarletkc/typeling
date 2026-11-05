@@ -68,7 +68,7 @@ from .predictor import Predictor
 from .text import normalize, split_input
 from .user import UserModel
 
-DEFAULT_LM = "scarletkc/Typeling-25M"
+DEFAULT_LM = "ScarletKc/Typeling-25M"
 EXACT = 3              # topk() is exact for this many candidates
 NGRAM_CANDIDATES = 8   # n-gram words fused per query
 CONTEXT_CHARS = 1000   # default: at most this many characters before the cursor are used (2,000 cost 0.1 KSR

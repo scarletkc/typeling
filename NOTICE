@@ -23,7 +23,7 @@ following attributions when redistributing or using the model:
   the Common Pile v0.1 (common-pile/ubuntu_irc_filtered), Kandpal et al. 2025
   https://huggingface.co/datasets/common-pile/ubuntu_irc_filtered
 
-The language model Typeling-25M (https://huggingface.co/scarletkc/Typeling-25M), used by
+The language model Typeling-25M (https://huggingface.co/ScarletKc/Typeling-25M), used by
 typeling/lm.py and distributed separately, is licensed under the Apache License, Version 2.0. It
 is SupraLabs/Supra2-Medium-Base (Apache License 2.0,
 https://huggingface.co/SupraLabs/Supra2-Medium-Base) further trained on the datasets above.
