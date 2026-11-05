@@ -35,6 +35,7 @@ uv run lm/eval.py --ngram --typos --limit 1000                        # typo ben
 TYPELING_LM=data/release/Typeling-25M uv run tests/test_lm.py         # decoder tests (skipped by unittest discover without it)
 uv run lm/export.py --model data/lm/runs/cpt-150m --llama-cpp data/tools/llama.cpp   # release files in data/release/ (fp16 + Q8_0 GGUF + cards)
 ./data/tools/llama-bin/llama-bench.exe -m data/release/Typeling-25M-GGUF/Typeling-25M-Q8_0.gguf -t 4   # llama.cpp b11953 (data/tools/, not tracked)
+cd paper && ../data/tools/tectonic/tectonic.exe typeling.tex   # technical report (ACL style, arXiv) -> paper/typeling.pdf (not tracked)
 uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" --index https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match python -m typeling --lm data/lm/runs/cpt-150m --device cpu --bench   # demo with the LM
 ```
 
@@ -49,6 +50,8 @@ uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" -
 - PyPI releases: bump `version` in `pyproject.toml`, push, then publish a GitHub release tagged `v<version>`;
   `.github/workflows/publish.yml` tests, builds and uploads with trusted publishing (environment `pypi`). A version
   number cannot be uploaded twice. Hugging Face repo ids are case-sensitive in the model tree: use `ScarletKc/...`.
+- The technical report (`paper/`) is in English and uses only numbers recorded in `docs/model-plan.md` and
+  `bench/results.jsonl`; verify every new citation before adding it to `paper/references.bib`.
 - When launching several background runs from PowerShell, do not pass arguments containing spaces through
   `Start-Process -ArgumentList` (it splits them); start each run as its own command.
 - Tokenizer rules live only in `typeling/text.py` and are shared by training and runtime; changing them requires

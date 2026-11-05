@@ -1,0 +1,519 @@
+\documentclass[11pt]{article}
+
+\usepackage[preprint]{acl}
+
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{inconsolata}
+\usepackage{amsmath}
+\usepackage{booktabs}
+
+\newcommand{\tok}[1]{\texttt{\detokenize{#1}}}
+
+\title{Typeling: A 25M-Parameter Language Model and Decoder\\for Offline Typing Prediction}
+
+\author{ScarletKc \\
+  Independent researcher \\
+  \url{https://github.com/scarletkc/typeling}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Keyboards on phones and desktops complete the word being typed and predict the next one, but the models behind
+commercial input methods are closed, and open small language models are trained for neither the task nor its
+resource budget. We present Typeling, an open system for offline English typing prediction: Typeling-25M, a
+25.4M-parameter causal language model obtained by continued pretraining of a small Qwen3-architecture base model on
+150M tokens of permissively licensed chat and writing text, and a decoder that turns its token predictions into word
+suggestions. The decoder searches the words consistent with the typed letters, repairs typing errors with a
+noisy-channel keyboard model scored by the language model, guarantees an exact top-3 candidate list, and mixes in a
+5 MB n-gram model and a local user model. On held-out test text, Typeling raises keystroke savings on chat from 34.1\%
+to 43.1\% over the strongest n-gram model the same corpus allows, and with every word mistyped it still completes
+85.6\% of the mistyped words correctly, against 48.5\% for an n-gram model. Decoder-side typo repair outperformed
+fine-tuning the model on synthetic typos, which hurt clean typing. Suggestions take about 25 ms on a laptop CPU. The
+model, an 8-bit GGUF file (27.6 MB), the decoder, the benchmark and the training code are released under the Apache
+License 2.0.
+\end{abstract}
+
+\section{Introduction}
+
+Word prediction is one of the oldest applications of language models: given the text before the cursor, suggest the
+rest of the current word and the next word, so that a user types fewer keys
+\citep{garay-vitoria-abascal-2006-text}. Mobile keyboards have moved from n-gram models to neural language models
+\citep{yu-etal-2018-device,hard-etal-2018-federated,zhang-etal-2024-neural}, and a recent keyboard runs a
+fine-tuned 360M-parameter model through llama.cpp on the phone \citep{lexo-2026}. These systems are proprietary. Open
+language models, on the other hand, are trained for chat and benchmarks, are hundreds of millions of parameters or
+more, and predict subword tokens, not words: used naively for typing, a model asked to continue \texttt{"Let me know
+"} produces punctuation, because byte-level tokenizers attach the space to the following word.
+
+We ask how good a typing predictor can be when it is small enough to run anywhere, offline, and built only from
+openly licensed parts. Our contributions:
+
+\begin{itemize}
+  \item \textbf{Typeling-25M}, a 25.4M-parameter model continued-pretrained for 58 minutes on one laptop GPU from
+  SupraLabs/Supra2-Medium-Base \citep{supra2-medium-2026} on chat and writing corpora with permissive licenses, with
+  two small changes for typing: a trained text separator and a trailing-space augmentation (\S\ref{sec:model}).
+  \item \textbf{A typing decoder} that computes word probabilities from a subword model under the constraint of the
+  typed letters, repairs typos with a noisy-channel keyboard model whose candidates share one beam with the typed
+  letters, returns an exact top-3 candidate list, and fuses an n-gram model and a user model (\S\ref{sec:decoder}).
+  \item \textbf{A benchmark} that simulates typing held-out chat, informal and written text and reports keystroke
+  savings for ghost text and for a three-candidate bar, with and without simulated typing errors
+  (\S\ref{sec:benchmark}).
+  \item \textbf{Findings} from the development of the system (\S\ref{sec:experiments}): an n-gram model saturates
+  quickly on a 47M-word corpus; doubling the base model buys only 1--2 points of keystroke savings; continued
+  pretraining on 20M tokens closes most of the domain gap; and repairing typos in the decoder beats fine-tuning the
+  model on them.
+\end{itemize}
+
+Everything is released: the model in 16-bit and 8-bit GGUF form, the Python package with the decoder and a
+dependency-free n-gram kernel, the benchmark and the training code.\footnote{\url{https://github.com/scarletkc/typeling},
+\url{https://huggingface.co/ScarletKc/Typeling-25M}.}
+
+\section{Related Work}
+
+\paragraph{Word prediction.} Text prediction for augmentative communication and keyboards has a long history
+\citep{garay-vitoria-abascal-2006-text}; it is usually evaluated by keystroke savings, whose computation involves
+choices (what a keystroke is, how suggestions are shown and accepted) that make numbers hard to compare across
+papers \citep{trnka-mccoy-2008-evaluating}. We therefore compare all systems within one simulation and report the
+choices explicitly (\S\ref{sec:benchmark}).
+
+\paragraph{Language models in keyboards.} Production keyboards combine a language model with a spatial model of
+touches \citep{goodman-etal-2002-language,fowler-etal-2015-effects}. \citet{yu-etal-2018-device} fit a neural word
+prediction model into 7.4 MB with 6.5 ms per prediction; \citet{hard-etal-2018-federated} trained a keyboard
+language model with federated learning; \citet{zhang-etal-2024-neural} replaced the n-gram language model in the
+Gboard decoder's search space with a neural one. \citet{lexo-2026} reports that moving from Qwen2.5-0.5B to 1.5B
+raised next-word top-1 accuracy only from 19.0\% to 20.1\% at 2.4 times the decoding cost, the same diminishing
+return we find at a much smaller scale. \citet{fowler-etal-2015-effects} measure the benefit of personalizing the
+language model, which our decoder supports but our benchmark does not measure.
+
+\paragraph{Noisy-channel correction.} Spelling correction as a noisy channel, choosing the intended word $c$ that
+maximizes $P(c)\,P(t \mid c)$ for a typed string $t$, goes back to \citet{kernighan-etal-1990-spelling}, with richer
+error models by \citet{brill-moore-2000-improved}. Our typo repair applies the same decomposition to partial words,
+with a contextual language model as the prior.
+
+\paragraph{Subword models and character strings.} Language models are distributions over token strings, so
+conditioning on a character prefix that ends inside a token biases predictions
+\citep{phan-etal-2024-understanding}; \citet{vieira-etal-2024-language} give exact and approximate algorithms to
+convert a token-level model into a character-level one. Our decoder solves a narrower version of this problem, word
+probabilities under a typed prefix, with a constrained beam search.
+
+\paragraph{Small language models.} Our base model and the references we compare against are small open models:
+Supra2-Medium-Base \citep{supra2-medium-2026} in the Qwen3 architecture \citep{qwen3-2025}, Supra-50M-Base, and
+Pythia \citep{biderman-etal-2023-pythia}. SmolLM2 \citep{allal-etal-2025-smollm2} starts at 135M parameters, beyond
+our size budget.
+
+\section{Task and Benchmark}
+\label{sec:benchmark}
+
+\paragraph{Data.} We use five English corpora with permissive licenses (Table~\ref{tab:data}): FineWeb
+\citep{penedo-etal-2024-fineweb} for written text; SODA \citep{kim-etal-2023-soda}, everyday dialogue generated by
+InstructGPT; the user turns of WildChat-1M \citep{zhao-etal-2024-wildchat} and OpenAssistant oasst2
+\citep{kopf-etal-2023-openassistant}, text typed by people into a chat interface; and Ubuntu IRC logs as packaged by
+the Common Pile \citep{kandpal-etal-2025-common}, informal internet chat. Emails, URLs and phone numbers are
+removed; chat sources keep only turns that look typed by a person. About 1\% of every corpus is held out as a
+development split and 1\% as a test split, by content hash. All decisions in this paper were made on the
+development splits; the test splits were used once, for the final results (\S\ref{sec:final}). Results are pooled
+into \emph{chat} (SODA, WildChat, oasst2), \emph{casual} (IRC) and \emph{writing} (FineWeb).
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}llrr@{}}
+\toprule
+Corpus & License & Words & Mix \\
+\midrule
+FineWeb & ODC-By 1.0 & 18.5M & 30\% \\
+SODA & CC BY 4.0 & 16.3M & 25\% \\
+WildChat-1M (users) & ODC-By 1.0 & 7.5M & 27\% \\
+Ubuntu IRC & Public domain & 4.4M & 17\% \\
+oasst2 (users) & Apache-2.0 & 0.4M & 1\% \\
+\bottomrule
+\end{tabular}
+\caption{Training corpora (training split) and their share of the continued-pretraining mix.}
+\label{tab:data}
+\end{table}
+
+\paragraph{Typing simulation.} For every target word $w$ of a held-out text (letters with inner apostrophes), the
+simulated user types $i = 0, 1, \dots, |w|-1$ letters, and the system is asked for its top three candidates given
+the text before the cursor. Comparisons ignore case. We evaluate two interfaces:
+\begin{itemize}
+  \item \emph{Ghost text}: the top candidate is shown when its probability is at least a threshold (0.3 for both
+  next-word prediction and completion, the defaults of both systems), and the user accepts it with one keystroke as
+  soon as it is the target.
+  \item \emph{Candidate bar}: the top three candidates are always shown, and the user picks the target with one
+  keystroke as soon as it is among them.
+\end{itemize}
+A word accepted after $i$ letters costs $\min(i+1, |w|)$ keystrokes, an unaccepted word $|w|$. The keystroke savings
+rate (KSR) is one minus the keystrokes used over the letters of all target words; KSR@3 is the same for the
+candidate bar. We also report the precision of ghost text (accepted over shown suggestions), next-word accuracy
+(acc@0: the target is the top candidate before any letter is typed) and top3@0.
+
+\paragraph{Typo simulation.} The simulation is repeated with a typist who types every word of three or more letters
+with an error and does not notice it: one error, two with probability 0.2, each one of a dropped apostrophe
+(\texttt{dont}), a missing capital, a QWERTY adjacent-key substitution, an omitted letter, an inserted adjacent or
+doubled key, or a transposition of neighboring letters. The typist continues through the whole mistyped word;
+accepting the intended word corrects the error. Errors depend only on a seed and the texts, so every system sees the
+same ones. Besides KSR, we report \emph{Correct}: the share of mistyped words that still end as the intended word.
+This is a worst case (76--82\% of all words are mistyped); with a share $r$ of mistyped words, KSR is about $(1-r)$
+times the clean KSR plus $r$ times the KSR with typos.
+
+\paragraph{Baselines.} Typeling includes a pure-Python n-gram kernel: an interpolated modified Kneser--Ney trigram
+model \citep{kneser-ney-1995-improved,chen-goodman-1999-empirical} over a 60,000-word vocabulary, pruned with the
+weighted-difference criterion \citep{seymore-rosenfeld-1996-scalable} to a 5 MB file with one-byte quantized
+probabilities, combined with a document cache and a user model. Without pruning, the same corpus yields a 23.4 MB
+model (1.66M bigrams, 3.41M trigrams), the strongest n-gram baseline the corpus allows.
+
+\section{Model}
+\label{sec:model}
+
+\paragraph{Base model.} We required a recent model under about 50M parameters, under the Apache License, in an
+architecture that llama.cpp \citep{llamacpp} supports. Table~\ref{tab:zeroshot} compares candidates zero-shot
+through our decoder. Supra-50M-Base (51.8M parameters, Llama architecture) is the most accurate, 1--2 KSR points
+ahead of Supra2-Medium-Base (25.4M parameters, Qwen3 architecture: 7 layers, hidden size 512, 8 attention heads,
+intermediate size 896, a 16,384-token byte-level BPE vocabulary with tied embeddings, 1,024-token context, trained
+on 20B FineWeb-Edu tokens). The gap survives simulated 4-bit quantization of the larger model, which costs it
+0.4--1.1 points, consistent with \citet{dettmers-zettlemoyer-2023-case}. We chose Supra2-Medium-Base anyway: it costs
+half the compute per token and half the file size for a small loss, and a keyboard model runs next to every other
+application. Neither base model had seen chat; both trail the unpruned n-gram model on IRC.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Model & Params & Chat & Casual & Writing \\
+\midrule
+n-gram & 5 MB & 29.7 & 22.8 & 23.5 \\
+n-gram, unpruned & 23 MB & 31.9 & \textbf{24.8} & 25.5 \\
+Pythia-14M & 14.1M & 28.5 & 21.8 & 33.6 \\
+Pythia-31M & 30.5M & 31.2 & 22.9 & 36.6 \\
+Supra2-Medium-Base & 25.4M & 33.5 & 22.8 & 38.6 \\
+Supra-50M-Base, Q4$^\dagger$ & 51.8M & 35.0 & 23.4 & 41.0 \\
+Supra-50M-Base & 51.8M & \textbf{35.6} & 24.1 & \textbf{42.1} \\
+\bottomrule
+\end{tabular}
+\caption{Zero-shot KSR (\%) of candidate base models through the decoder, development splits, 2,000 words per
+source. $^\dagger$Linear layers rounded as GGUF Q4\_0, embeddings to 6 bits.}
+\label{tab:zeroshot}
+\end{table}
+
+\paragraph{Continued pretraining.} We update all parameters on 150M tokens (about 2.2 epochs of the 67M-token
+corpus) with the mix in Table~\ref{tab:data}: packed sequences of 512 tokens, 4,578 steps of 32,768 tokens, AdamW
+\citep{loshchilov-hutter-2019-decoupled} with peak learning rate $6\times10^{-4}$, 5\% linear warmup, cosine decay to
+zero, weight decay 0.1, bf16 mixed precision. The run took 58 minutes on a laptop RTX 5070 Ti. oasst2 is held at
+1\% because at 5\% its 0.5M tokens would be repeated about 15 times. Two changes target typing:
+\begin{itemize}
+  \item \emph{Separator.} The base model was trained on concatenated documents without separators; its \tok{</s>}
+  embedding was untrained, and starting a text with it gave per-word perplexities 3--30\% higher than starting
+  with a newline. We separate texts with \tok{</s>} and initialize its embedding with the newline token's.
+  \item \emph{Trailing space.} Byte-level BPE attaches the space to the next word (\tok{" know"}), so a text ending
+  in a space is rare in training, and the raw model continues \texttt{"Let me know "} with junk such as \tok{"!"}.
+  In 1\% of words we re-tokenize \tok{" word"} as \tok{" "} followed by \tok{"word"}. At 3\% the raw model predicts
+  sensible words after a space but the development loss rises by about 0.03 on every source and KSR by 0.7 points
+  less; at 1\% the loss rises by about 0.01. Our decoder does not need the augmentation (\S\ref{sec:decoder}); it
+  helps users of the raw weights.
+\end{itemize}
+
+\section{Decoder}
+\label{sec:decoder}
+
+The decoder exposes \texttt{topk(text, k)}, the $k$ most likely full words for the text before the cursor, and
+\texttt{suggest(text)}, the ghost text.
+
+\paragraph{Words from tokens.} The text is split into the context $c$, the whitespace after it (the lead $\ell$)
+and the partially typed word $p$. The context is cut before its trailing whitespace, and the string
+$\tau = \ell p$ (e.g.\ \tok{" kn"}) becomes a constraint on the generated tokens. A beam search (width 8) explores
+token sequences $y$ in two phases. In the \emph{prefix phase}, only tokens consistent with $\tau$ are allowed: tokens
+that are prefixes of the rest of $\tau$ (\tok{" k"}) or that start with it (\tok{" know"}). In the \emph{word phase},
+once $\tau$ is covered, the word grows with letter and contraction tokens (\tok{"know"}$+$\tok{"ing"},
+\tok{"don"}$+$\tok{"'t"}) until the model ends it. With $C$ the set of word-continuing tokens, the probability that
+the word ends after $y$ is $e(y) = 1 - \sum_{t \in C} P(t \mid c, y)$, and
+\begin{equation}
+P(w \mid c, \tau) = \frac{1}{Z}\sum_{y\,:\,\mathrm{str}(y) = \ell w} P(y \mid c)\, e(y),
+\label{eq:word}
+\end{equation}
+where $Z$, the probability of the constraint, accumulates the mass of all tokens that complete $\tau$ during the
+prefix phase. Casings of a word are merged. The context's key/value cache is reused across keystrokes.
+
+\paragraph{Exact top 3.} The search stops when no unexplored path can beat the third-best word found so far. The
+first three candidates are therefore exact up to the beam; further candidates are the other words the search
+reached.
+
+\paragraph{Typo repair.} For typed letters $p$ (two or more), we enumerate the strings $q$ that one error turns into
+$p$: each adjacent-key substitution, each deletion of a key that doubles or neighbors an adjacent letter, each
+insertion of a letter or apostrophe (not at the end, where a letter is simply not typed yet), each transposition of
+neighboring letters, and capitalizing the first letter. We keep the $q$ that start a word of the n-gram
+vocabulary, rank them by the unigram mass of the words they start, and add the best four as extra constraints
+$\tau_q = \ell q$ with weight $\omega = 0.003$, the probability of an error relative to none. All constraints share
+one beam: each hypothesis starts with $\log \omega_q$ added to its log probability, and hypotheses that satisfy
+different constraints merge once their token paths coincide. The probability of a word becomes
+\begin{equation}
+P(w \mid c, p) \propto \sum_{q \,:\, w \text{ starts with } q} \omega_q\, P(w \mid c),
+\end{equation}
+normalized by $\sum_q \omega_q P(\tau_q \mid c)$, a noisy channel \citep{kernighan-etal-1990-spelling} with the
+language model as prior. The typed letters have weight 1, or 0.1 when they start no vocabulary word: the model has
+learned frequent misspellings from chat (\texttt{recieve}) and would otherwise prefer them. Corrections appear in
+\texttt{topk()} and the candidate bar; ghost text only extends the typed letters. Because the corrections share the
+beam, the number of model calls barely changes.
+
+\paragraph{N-gram fusion and filters.} The final probability is $(1-\lambda)$ times the decoder's plus $\lambda =
+0.1$ times the n-gram kernel's (its top 8 words, 0 for others). The short beam misses rare long words
+(\texttt{encyc} $\to$ \textit{encyclopedia}: absent without fusion, 0.93 with it), and subword pieces can form
+non-words (\textit{don'tknow}); the n-gram vocabulary fixes both. Words the n-gram kernel marks as offensive or as
+known misspellings are never suggested.
+
+\paragraph{User model.} The kernel's user model (counts of the words and word pairs the user typed) is mixed into
+the joint probabilities before normalization over the words that fit the typed letters:
+$P(w \mid c, p) \propto (1-u)\,P_{\mathrm{LM}}(w, p \mid c) + u\,P_{\mathrm{user}}(w \mid w_{-1})$, with
+$u = 0.3\,N/(N + 2000)$ growing with the number $N$ of learned words. A name the language model barely knows takes
+the lead after a few uses, because the model gives its letters almost no probability, while common words stay with
+the language model.
+
+\paragraph{Context.} The decoder uses the last 1,000 characters before the cursor; the start of a cut context moves
+in steps of 250 characters so that the cache stays valid in between.
+
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{How far an n-gram model scales}
+
+Removing all pruning (5 MB $\to$ 23 MB) raises development KSR by only 1.8--2.2 points (chat 32.1\% $\to$ 34.3\%,
+casual 22.8\% $\to$ 24.6\%, writing 23.1\% $\to$ 25.0\%; 20,000 words per source), and next-word accuracy barely
+moves (SODA 28.6\% $\to$ 29.2\%, WildChat 21.3\% $\to$ 22.6\%, IRC 13.8\% $\to$ 14.4\%). A trigram model sees two
+words of context; more size only adds rarer word combinations.
+
+\subsection{Continued pretraining}
+
+A 20M-token pilot (5.6 minutes) already raised chat KSR from 33.5\% (zero-shot) to 40.3\% and casual from 22.8\% to
+27.7\%, with writing slightly lower (38.6\% $\to$ 37.5\%) as the model moved toward chat. The full 150M-token run
+adds 0.9 points on chat (41.2\%) and 1.9 on casual (29.6\%); writing stays flat (37.2\%), and development loss per
+token falls from 2.85 to 1.71 on SODA, 4.49 to 3.52 on WildChat and 4.72 to 3.82 on IRC, while FineWeb rises from
+3.75 to 3.79. Returns diminish on this corpus: more data, not more epochs, is the likelier next gain. A higher
+learning rate ($1.2\times10^{-3}$) adapted slightly faster to chat (development loss 0.01--0.02 lower) but forgot
+more writing (0.10 higher), and $3\times10^{-4}$ the reverse.
+
+\subsection{Final results}
+\label{sec:final}
+
+Table~\ref{tab:final} reports the test splits, run once with the released 16-bit weights and the decoder defaults.
+Typeling-25M saves 9.0 points more keystrokes than the unpruned n-gram model on chat, 5.3 on casual and 8.5 on
+writing, at higher precision; the candidate bar adds 15--18 points over ghost text for every system. Next-word
+accuracy (Table~\ref{tab:nextword}) is 5--13 points higher on every source.
+
+\begin{table*}[t]
+\centering
+\small
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+& \multicolumn{2}{c}{Chat} & \multicolumn{2}{c}{Casual} & \multicolumn{2}{c}{Writing} & Precision \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+System & KSR & KSR@3 & KSR & KSR@3 & KSR & KSR@3 & (chat) \\
+\midrule
+n-gram, 5 MB & 31.6 & 48.8 & 22.7 & 38.9 & 22.3 & 40.6 & 51.0 \\
+n-gram, unpruned, 23 MB & 34.1 & 50.6 & 24.4 & 40.4 & 23.9 & 41.5 & 51.2 \\
+Typeling-25M & \textbf{43.1} & \textbf{58.0} & \textbf{29.8} & \textbf{46.8} & \textbf{32.4} & \textbf{49.9} &
+\textbf{54.7} \\
+\bottomrule
+\end{tabular}
+\caption{Test splits, 2,000 words per source: keystroke savings (\%) with ghost text (KSR) and a three-candidate bar
+(KSR@3), and ghost-text precision on chat.}
+\label{tab:final}
+\end{table*}
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Source & n-gram, 23 MB & Typeling-25M \\
+\midrule
+SODA & 30.0 / 46.9 & \textbf{43.4 / 62.5} \\
+WildChat & 22.6 / 35.5 & \textbf{31.3 / 45.9} \\
+oasst2 & 18.9 / 30.7 & \textbf{28.1 / 44.5} \\
+Ubuntu IRC & 13.9 / 24.0 & \textbf{19.0 / 32.4} \\
+FineWeb & 15.0 / 27.1 & \textbf{24.8 / 37.7} \\
+\bottomrule
+\end{tabular}
+\caption{Next word before any letter is typed, test splits: acc@0 / top3@0 (\%).}
+\label{tab:nextword}
+\end{table}
+
+\subsection{Typos: repair in the decoder or in the model?}
+
+Typing every word with an error costs the decoder without repair 8.4--8.8 KSR points on the development splits
+(Table~\ref{tab:typos}). Repair recovers 36--48\% of that loss at a clean cost of 0.1--0.5 points and raises the
+share of mistyped words that end correct from 48--62\% to 72--84\%. The error weight matters little between 0.003
+and 0.03; higher weights cost more on clean input.
+
+We also fine-tuned the model on typos: 40M tokens from the continued-pretraining checkpoint, half the usual corpus
+mix and half 600,000 examples of the form \tok{context <|typed|> letters <|word|> word </s>} with the loss on the
+intended word only (47\% of the typed letters carry errors). The typo loss fell from 5.78 to 1.14 per token and the
+model corrects well in isolation (the intended word on top after the whole mistyped word for 84\% of SODA words,
+against 7\% before), but clean development loss stayed 0.07--0.12 above the checkpoint, and in the typing simulation
+it is worse than decoder repair everywhere: 6--10 points lower KSR on clean text and 6--11 on mistyped text. We
+therefore release the model without typo fine-tuning.
+
+On the test splits, with every word mistyped, Typeling's chat KSR falls from 44.5\% to 40.1\% (85.6\% of mistyped
+words end correct) and KSR@3 from 59.4\% to 55.7\% (94.5\%), against 32.1\% $\to$ 22.7\% (48.5\%) and 49.6\% $\to$
+40.5\% (71.0\%) for the 5 MB n-gram model; casual and writing behave alike (Appendix~\ref{app:typos}).
+
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Decoder & Chat & Casual & Writing \\
+\midrule
+n-gram, 5 MB & 29.4 $\to$ 20.4 & 21.6 $\to$ 14.3 & 22.7 $\to$ 14.7 \\
+& (48.4) & (39.2) & (39.2) \\
+No repair & 41.3 $\to$ 32.5 & 28.8 $\to$ 20.2 & 34.7 $\to$ 26.3 \\
+& (61.7) & (47.9) & (54.3) \\
+Repair, $\omega{=}0.003$ & 41.1 $\to$ \textbf{36.5} & 28.3 $\to$ \textbf{22.8} & 34.6 $\to$ \textbf{29.6} \\
+& (84.3) & (72.1) & (82.0) \\
+Repair, $\omega{=}0.03$ & 40.7 $\to$ 36.7 & 27.6 $\to$ 22.7 & 33.6 $\to$ 29.6 \\
+& (85.5) & (74.7) & (82.8) \\
+Typo fine-tuned & 34.0 $\to$ 28.8 & 22.6 $\to$ 16.7 & 24.5 $\to$ 19.1 \\
+& (73.9) & (62.5) & (61.4) \\
+\bottomrule
+\end{tabular}
+\caption{Development splits, 1,000 words per source: KSR (\%) clean $\to$ with every word mistyped, and in
+parentheses the share of mistyped words that end correct. Without n-gram fusion.}
+\label{tab:typos}
+\end{table}
+
+\subsection{Decoder ablations}
+
+On the development splits (1,000 words per source), n-gram fusion at $\lambda = 0.1$ changes KSR@3 by $+0.2$ to
+$+0.3$ points and ghost-text precision by $+1$ to $+2$, and lowers ghost-text KSR by up to 0.4; $\lambda = 0.3$ lowers
+chat KSR by 0.8. Down-weighting typed letters that start no vocabulary word changes nothing on clean text and adds
+0.1--0.3 points with typos. These differences are within sampling noise (\S\ref{sec:limitations}); we keep both
+for the qualitative errors they fix (\S\ref{sec:decoder}). A context of 1,000 instead of 2,000 characters costs 0.1
+KSR points on writing and nothing on chat, whose texts are shorter, and lowers the 95th and 99th percentile CPU
+time on long texts from 76 and 110 ms to 63 and 82 ms.
+A beam of 6 is 0.1--0.6 points worse than 8 and not faster.
+
+\subsection{Export and quantization}
+
+The 16-bit safetensors (50.8 MB) give the same development perplexity as float32. The Q8\_0 GGUF file (27.6 MB),
+compared with an F16 conversion on 380k characters of development text, raises perplexity by 0.08\% (30.025 vs
+30.000), with a mean KL divergence of 0.0009 and the same top token 97.9\% of the time. We release no 4-bit file: at
+25M parameters it would save about 10 MB, and small models lose more to 4 bits.
+
+\subsection{Latency and footprint}
+
+Table~\ref{tab:latency} reports the time per suggestion of the full decoder in PyTorch on a laptop CPU (AMD Ryzen 9
+9955HX, 4 threads, float32). Chat and casual text meet our target of 50 ms at the 95th percentile and 100 ms at the
+99th, the gap between keystrokes of a fast typist; long written text meets only the second. Most of the time goes
+into copying the context's key/value cache for every hypothesis at every beam step; a llama.cpp implementation, whose
+sequences can share cache cells, would remove it. On the same 4 threads, llama.cpp processes 11,900 tokens per second
+of prompt and 2,800 single-token steps per second with the Q8\_0 file. The PyTorch path occupies 549 MB of memory
+(the n-gram kernel 54 MB) and needs 4.6 s to import PyTorch and 2.5 s to load the model, acceptable for a library
+but not for a resident input method.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Source & Mean & p95 & p99 \\
+\midrule
+SODA & 24.8 & 39.1 & 51.1 \\
+WildChat & 23.7 & 39.9 & 52.0 \\
+oasst2 & 23.5 & 44.7 & 56.0 \\
+Ubuntu IRC & 23.4 & 47.7 & 59.7 \\
+FineWeb & 32.8 & 63.0 & 82.2 \\
+\bottomrule
+\end{tabular}
+\caption{Milliseconds per suggestion, PyTorch decoder with typo repair and n-gram fusion on a laptop CPU (4
+threads), 300 words per development source. The n-gram kernel alone takes 41--115~$\mu$s.}
+\label{tab:latency}
+\end{table}
+
+\section{Conclusion}
+
+A 25M-parameter model, adapted to chat in under an hour on a laptop and decoded with care for words, typos and the
+typed prefix, saves 9 points more keystrokes on chat than the strongest n-gram model its corpus supports and repairs
+most typing errors. The largest remaining costs are engineering ones: the memory and startup time of PyTorch and the
+latency of long contexts, which a llama.cpp port of the decoder should address.
+
+\section*{Limitations}
+\label{sec:limitations}
+
+\begin{itemize}
+  \item \textbf{No confidence intervals.} Each cell uses 1,000--2,000 words per source (300 for latency); from
+  repeated runs, differences of about one point are within sampling noise. The main gaps (5--9 points) are well
+  beyond it; the decoder ablations (0.1--0.4 points) are not.
+  \item \textbf{Quantized file not run through the typing benchmark.} The Q8\_0 GGUF file was compared with the
+  16-bit weights by perplexity and KL divergence only, because the decoder runs on PyTorch.
+  \item \textbf{No comparison with larger general models.} We did not evaluate models of hundreds of millions of
+  parameters (e.g.\ SmolLM2-360M, Qwen2.5-0.5B) through the same decoder; the only evidence on scale beyond 50M
+  parameters is the report of \citet{lexo-2026}.
+  \item \textbf{Simulated users.} Typing and typos are simulated; the typo model reflects common keyboard errors,
+  not recorded human typing, and no user study was run. The benchmark cannot measure personalization, because its
+  texts come from many different people.
+  \item \textbf{Data.} SODA was generated by InstructGPT, whose terms restrict using outputs to build competing
+  models. The base model was trained on FineWeb-Edu, filtered from FineWeb, so writing results may be optimistic.
+  English only.
+  \item \textbf{One machine.} Latency was measured on one laptop CPU.
+\end{itemize}
+
+\section*{Ethical Considerations}
+
+Typeling runs offline: what the user types, and the user model learned from it, stay on the machine. All training
+data carries permissive licenses and is attributed in the release. The model can suggest offensive words or
+reproduce biases of web and chat text; the decoder does not suggest words from a blocklist, but other harmful
+completions are possible.
+
+\bibliography{references}
+
+\appendix
+
+\section{Typos on the Test Splits}
+\label{app:typos}
+
+Test splits, 1,000 words per source: keystroke savings (\%) clean $\to$ with every word of three or more letters
+mistyped, and in parentheses the share of mistyped words that end correct.
+
+\begin{center}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}llcc@{}}
+\toprule
+& & n-gram, 5 MB & Typeling-25M \\
+\midrule
+Chat & KSR & 32.1 $\to$ 22.7 (48.5) & 44.5 $\to$ 40.1 (85.6) \\
+& KSR@3 & 49.6 $\to$ 40.5 (71.0) & 59.4 $\to$ 55.7 (94.5) \\
+Casual & KSR & 22.5 $\to$ 14.8 (36.9) & 28.6 $\to$ 23.1 (73.1) \\
+& KSR@3 & 39.1 $\to$ 29.3 (57.8) & 46.5 $\to$ 41.3 (88.4) \\
+Writing & KSR & 24.3 $\to$ 15.7 (40.9) & 33.7 $\to$ 27.9 (78.5) \\
+& KSR@3 & 42.3 $\to$ 32.0 (62.9) & 50.8 $\to$ 45.5 (90.5) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Examples}
+
+Suggestions of the released model with the default decoder (top candidates with probabilities):
+\begin{itemize}
+  \item \texttt{"Let me know "}: \textit{if} 0.73, \textit{how} 0.12, \textit{what} 0.06.
+  \item \texttt{"See you tomm"}: \textit{tomorrow} 0.90, \textit{tommy} 0.07.
+  \item \texttt{"Thank you so mich"}: \textit{much} 0.90, \textit{michael} 0.04.
+  \item \texttt{"What do you thnik"}: \textit{think} 0.89.
+  \item \texttt{"I looked it up in the encyc"}: \textit{encyclopedia} 0.93.
+  \item \texttt{"I will recie"}: \textit{receive} first, but at 0.01: the model's mass goes to the misspelling
+  \textit{recieve}, which the decoder hides, so no ghost text is shown.
+\end{itemize}
+
+\section{Reproduction}
+
+The repository contains the corpus builder (\texttt{training/build.py}), the tokenizer and training scripts
+(\texttt{lm/data.py}, \texttt{lm/train.py}), the benchmark (\texttt{bench/eval.py}, \texttt{lm/eval.py}), the
+export to safetensors and GGUF (\texttt{lm/export.py}), and \texttt{docs/model-plan.md}, which records every run
+in this paper with its command and results; \texttt{bench/results.jsonl} stores the raw benchmark output.
+
+\end{document}
