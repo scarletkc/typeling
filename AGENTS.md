@@ -35,7 +35,7 @@ uv run lm/eval.py --ngram --typos --limit 1000                        # typo ben
 TYPELING_LM=data/release/Typeling-25M uv run tests/test_lm.py         # decoder tests (skipped by unittest discover without it)
 uv run lm/export.py --model data/lm/runs/cpt-150m --llama-cpp data/tools/llama.cpp   # release files in data/release/ (fp16 + Q8_0 GGUF + cards)
 ./data/tools/llama-bin/llama-bench.exe -m data/release/Typeling-25M-GGUF/Typeling-25M-Q8_0.gguf -t 4   # llama.cpp b11953 (data/tools/, not tracked)
-cd paper && ../data/tools/tectonic/tectonic.exe typeling.tex   # technical report (ACL style) -> paper/typeling.pdf (not tracked)
+uv run --no-project --python 3.13 paper/version.py && cd paper && ../data/tools/tectonic/tectonic.exe typeling.tex   # technical report (ACL style, version from pyproject.toml) -> paper/typeling.pdf (not tracked)
 uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" --index https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match python -m typeling --lm data/lm/runs/cpt-150m --device cpu --bench   # demo with the LM
 ```
 
@@ -49,8 +49,9 @@ uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" -
   GitHub repository public, PyPI) only on the user's explicit go-ahead.
 - PyPI releases: bump `version` in `pyproject.toml`, push, then publish a GitHub release tagged `v<version>`;
   `.github/workflows/publish.yml` tests, builds and uploads with trusted publishing (environment `pypi`). A version
-  number cannot be uploaded twice. Attach the technical report as `typeling-technical-report.pdf` (README.md and the
-  model card link to the v0.1.1 asset). Hugging Face repo ids are case-sensitive in the model tree: use `ScarletKc/...`.
+  number cannot be uploaded twice. The workflow also builds the technical report with the package version
+  (`paper/version.py`, Tectonic) and attaches it as `typeling-technical-report.pdf`; README.md and the model card link
+  to the latest release's copy. PyPI waits for the report, so a LaTeX error stops the release. Hugging Face repo ids are case-sensitive in the model tree: use `ScarletKc/...`.
 - The technical report (`paper/`) is in English and uses only numbers recorded in `docs/model-plan.md` and
   `bench/results.jsonl`; verify every new citation before adding it to `paper/references.bib`.
 - When launching several background runs from PowerShell, do not pass arguments containing spaces through

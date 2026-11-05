@@ -85,6 +85,14 @@ About 47M words, roughly 65M tokens with the base tokenizer (1.29–1.44 tokens 
 document is one segment, separated by the end-of-text token `</s>`. The base model never saw `</s>` or `<s>`
 (section 12); `</s>` is therefore initialized from the newline token before training (section 4).
 
+WildChat's dev split is about 24% smaller than its test split (2,927 vs 3,805 turns; train 377,589; about 3,840 each
+expected from the 1% content-hash split). IRC (4,277 / 4,142), FineWeb (401 / 434) and the official SODA and oasst2
+splits look normal. The deficit is spread evenly over the ten dev hash buckets (272–314 turns each, test 349–410), and
+dev and test have the same share of turns with 13+ words (51.0% vs 51.5%) and of turns sharing a 13-gram with the
+training split (12.8% both). The current and the first committed `fetch_wildchat` cannot produce it; the corpus files
+were written at 04:50 on 2026-11-05, between the first two commits of `training/build.py` (04:25 and 04:55), so the
+exact code that wrote them is not recorded. Cause unknown; the dev split looks like a random subsample, so it is kept.
+
 If the evaluation shows that more data would help, the next sources, in order of expected value: the remaining 30% of
 WildChat user turns, the rest of SODA, CC BY YouTube transcripts (`common-pile/youtube_filtered`, spoken language),
 more Ubuntu IRC, and CC BY news. New data from existing sources uses the same content-hash split, so the dev and test
@@ -186,7 +194,7 @@ mode for typo-fine-tuned models.
   perplexity and tokens per word. For speed it defaults to 2,000 words per source; compare against the n-gram model
   at the same `--limit`.
 - Resource use: file size, peak memory and per-suggestion latency on a laptop CPU with llama.cpp (milestone 3).
-- Baselines on the same benchmark: the strongest n-gram model the corpus allows (no pruning, 23.35 MB; built with
+- Baselines on the same benchmark: the unpruned n-gram model (no weighted-difference pruning, count cutoff 2, 23.35 MB; built with
   `uv run training/build.py model --out data/ngram-unpruned.bin --budget 30e6`), the bundled 5 MB n-gram model,
   the base model before fine-tuning, Supra-50M, Pythia-14M and Pythia-31M (references only).
 - Robustness: `lm/eval.py --typos` types every word of 3+ letters with a synthetic error and compares KSR and KSR@3
@@ -459,7 +467,11 @@ typing of the same words. Ghost-text KSR, clean -> with typos (share of mistyped
   KSR and Correct are therefore upper bounds for `suggest()`; KSR@3 and Correct@3 match `topk()`. The benchmark now
   follows `suggest()` (`bench/eval.py` `ghost_conf()`): ghost text can then accept a mistyped word only before the
   error. Clean KSR is unchanged; clean precision rises slightly (a top candidate that cannot be shown no longer
-  counts as a wrong suggestion). The runs were not repeated.
+  counts as a wrong suggestion). The runs were not repeated. The n-gram and no-repair runs are the same under both
+  rules (their candidates always extend the typed letters). Commit `0c26442` is the last with the earlier rule.
+- No candidate-bar result without repair: the no-repair run predates Correct@3, so how much of the bar's Correct@3
+  is due to repair is unknown (`lm/eval.py --model data/lm/runs/cpt-150m --typos --typo-weight 0 --ngram-weight 0
+  --limit 1000` would measure it).
 
 **Typo fine-tuning experiment.** `uv run lm/typos.py --model data/lm/runs/cpt-150m --out data/lm/tokens/typo` (600k
 examples, 47% with errors), then 40M tokens from cpt-150m (1,221 steps, lr 3e-4, half typo examples with the loss on

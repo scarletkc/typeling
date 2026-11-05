@@ -109,8 +109,8 @@ is picked from the candidate bar. Corrections appear only in the bar: ghost text
 | Writing | 42.3% -> 32.0% (62.9%) | 50.8% -> 45.5% (90.5%) |
 
 The errors come from the same keyboard model that the repair undoes, and earlier words are never mistyped, so these
-numbers are optimistic. At a realistic share of mistyped words, repair saves few keystrokes; its benefit is that
-mistyped words end correct.
+numbers are optimistic. The n-gram kernel does not repair typos, and the bar was not measured without repair, so the
+table compares two systems rather than isolating repair.
 
 Perplexity per word on the test splits: SODA 17.7, WildChat 180, oasst2 107, Ubuntu IRC 323, FineWeb 175.
 
@@ -145,7 +145,7 @@ tokens/s for prompts and 2,800 tokens/s for single-token steps on the same 4 thr
 A 40M-token fine-tuning run on synthetic typos was also tried. Decoded in its own typed mode, it was worse than this
 model with typo repair in the decoder on both clean and mistyped text, so this model does not include it.
 
-The [technical report](https://github.com/scarletkc/typeling/releases/download/v0.1.1/typeling-technical-report.pdf)
+The [technical report](https://github.com/scarletkc/typeling/releases/latest/download/typeling-technical-report.pdf)
 (PDF) describes the model, the decoder and the results;
 [docs/model-plan.md](https://github.com/scarletkc/typeling/blob/master/docs/model-plan.md) records the plan and every
 experiment.

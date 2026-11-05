@@ -10,7 +10,7 @@ The `typeling` package has two predictors with the same interface:
   `typeling[lm]`: PyTorch and Transformers).
 
 Training and evaluation of the language model are in `lm/`. The
-[technical report](https://github.com/scarletkc/typeling/releases/download/v0.1.1/typeling-technical-report.pdf)
+[technical report](https://github.com/scarletkc/typeling/releases/latest/download/typeling-technical-report.pdf)
 (PDF) describes the model, the decoder and the results;
 [docs/model-plan.md](https://github.com/scarletkc/typeling/blob/master/docs/model-plan.md) records the plan and every
 experiment.
@@ -170,8 +170,9 @@ KSR@3 with a bar of 3 candidates):
 | writing (FineWeb) | 22.3% / 40.6% | 23.9% / 41.5% | **32.4% / 49.9%** |
 
 With every word of 3+ letters mistyped, chat KSR@3 drops from 49.6% to 40.5% with the n-gram kernel and from 59.4%
-to 55.7% with Typeling-25M, which repairs the errors among its candidates: the intended word is picked from the bar
-for 94.5% of the mistyped words, against 71.0%. Ghost text only extends what was typed, so it cannot correct. Next-word
+to 55.7% with Typeling-25M, whose candidates include corrections: the intended word is picked from the bar for 94.5%
+of the mistyped words, against 71.0% (the n-gram kernel does not repair typos). Ghost text only extends what was
+typed, so it cannot correct. Next-word
 accuracy, typo results per domain, latency and training details are in the
 [model card](https://huggingface.co/ScarletKc/Typeling-25M) and
 [docs/model-plan.md](https://github.com/scarletkc/typeling/blob/master/docs/model-plan.md).

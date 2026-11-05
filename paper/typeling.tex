@@ -12,12 +12,14 @@
 \usepackage{booktabs}
 
 \newcommand{\tok}[1]{\texttt{\detokenize{#1}}}
+\IfFileExists{version.tex}{\input{version.tex}}{\newcommand{\typelingversion}{dev}}
 
 \title{Typeling: Adapting a 25M-Parameter Language Model\\to Offline Typing Prediction}
 
 \author{ScarletKc \\
   Independent researcher \\
-  \texttt{i@scarletkc.com}}
+  \texttt{i@scarletkc.com} \\[1ex]
+  {\normalfont\normalsize Technical report, version \typelingversion{} (\today)}}
 
 \begin{document}
 \maketitle
@@ -31,10 +33,11 @@ Qwen3-architecture base model on 150M tokens of permissively licensed chat and w
 turns its token predictions into suggestions: it searches the words consistent with the typed letters, repairs
 typing errors with a noisy-channel keyboard model scored by the language model, and mixes in a 5 MB n-gram model and
 a local user model. On held-out chat, Typeling raises keystroke savings from 34.1\% to 43.1\% over an unpruned
-trigram model trained on the same corpus; most of the gain over the base model comes from the continued pretraining.
-When every word of three or more letters is mistyped in simulation, the intended word is still picked from a
-three-candidate bar for 94.5\% of the mistyped chat words (71.0\% for the 5 MB n-gram model); at realistic error
-rates, typo repair saves few keystrokes, and its benefit is in correct words. Fine-tuning on synthetic typos, in the
+trigram model trained on the same corpus; on development data, 7.7 of the corresponding 9.3 points come from the
+continued pretraining. Typo repair offers corrections in a three-candidate bar: when every word of three or more
+letters is mistyped in simulation, the intended word is picked from the bar for 94.5\% of the mistyped chat words,
+against 71.0\% for the 5 MB n-gram model, which does not repair typos; we did not measure the bar without repair.
+Fine-tuning on synthetic typos, in the
 recipe we tried, hurt clean typing, so the model is released without it. The model (16-bit safetensors and a
 27.6 MB 8-bit GGUF file), the decoder, the benchmark and the training code are released under the Apache License 2.0.
 \end{abstract}
@@ -63,11 +66,10 @@ offline typing prediction over an n-gram model, using only permissively licensed
   \item \textbf{A benchmark} that simulates typing held-out chat, informal and written text and reports keystroke
   savings for ghost text and for a three-candidate bar, with and without simulated typing errors
   (\S\ref{sec:benchmark}).
-  \item \textbf{Findings} from the development of the system (\S\ref{sec:experiments}): an n-gram model saturates
-  quickly on a 47M-word corpus; a base model twice the size is 1.3--3.5 keystroke-savings points better zero-shot;
-  continued pretraining on 20M tokens brings most of the gain over the zero-shot base model; typo repair in the
-  decoder keeps most mistyped words correct in the candidate bar but saves few keystrokes at realistic error rates;
-  and the one typo fine-tuning recipe we tried hurt clean typing.
+  \item \textbf{Findings} from the development of the system (\S\ref{sec:experiments}): removing pruning adds only
+  1.8--2.2 keystroke-savings points to the trigram model; a base model twice the size is 1.3--3.5 points better
+  zero-shot; continued pretraining on 20M tokens brings most of the gain over the zero-shot base model; and the one
+  typo fine-tuning recipe we tried hurt clean typing.
 \end{itemize}
 
 Everything is released: the model as 16-bit safetensors and as an 8-bit GGUF file, the Python package with the
@@ -116,11 +118,14 @@ at 135M parameters, beyond our size budget.
 InstructGPT; the user turns of WildChat-1M \citep{zhao-etal-2024-wildchat} and OpenAssistant oasst2
 \citep{kopf-etal-2023-openassistant}, text typed by people into a chat interface; and Ubuntu IRC logs as packaged by
 the Common Pile \citep{kandpal-etal-2025-common}, informal internet chat. Emails, URLs and phone numbers are removed
-from FineWeb, and chat turns that contain them are dropped; chat sources keep only turns that look typed by a person.
-For FineWeb, WildChat and IRC, about 1\% of the texts are held out as a development split and 1\% as a test split, by
-content hash. SODA and oasst2 keep their official splits (for SODA, the first 400 dialogues of its validation and
-test sets; oasst2's validation set is divided between development and test by message hash), so their development
-splits are about 0.3\% and 2.3\% of the size of their training splits. All decisions in this paper were made on the
+from FineWeb; WildChat, oasst2 and IRC keep only turns that look typed by a person and contain none of them, and
+WildChat also drops turns flagged as toxic or redacted. SODA is used as released. For FineWeb, WildChat and IRC, about
+1\% of the texts are held out as a development split and 1\% as a test split, by content hash. SODA and oasst2 keep
+their official splits (for SODA, the first 400 dialogues of its validation and test sets; oasst2's validation set is
+divided between development and test by message hash), so their development splits are about 0.3\% and 2.3\% of the
+size of their training splits. WildChat's development split came out about 24\% smaller than its test split (2,927
+vs 3,805 turns), for a reason we could not determine; the two splits have the same share of long turns and of turns
+that share a 13-gram with the training split. All decisions in this paper were made on the
 development splits; the test splits were used once, for the final results (\S\ref{sec:final}). Results are pooled
 into \emph{chat} (SODA, WildChat, oasst2), \emph{casual} (IRC) and \emph{writing} (FineWeb).
 
@@ -166,7 +171,7 @@ The typist continues through the whole mistyped word; accepting the intended wor
 only on a seed and the texts, so every system sees the same ones; the earlier words in the context are left as in
 the text. Besides KSR, we report \emph{Correct}: the share of mistyped words whose intended word was accepted at some
 step, including the steps before the error was typed. This is a worst case (76--82\% of all words are mistyped); with
-a share $r$ of mistyped words, KSR is about $(1-r)$ times the clean KSR plus $r$ times the KSR with typos.
+a share $r$ of mistyped words among the words of three or more letters, KSR is about $(1-r)$ times the clean KSR plus $r$ times the KSR with typos.
 
 The typo results are optimistic in two ways. The errors are drawn with the same keyboard layout and error types that
 the decoder's repair undoes (\S\ref{sec:decoder}), so the benchmark measures repair on the errors it was designed
@@ -201,7 +206,8 @@ half the parameters, so half the file and memory at equal precision. The argumen
 Q4\_0 stores about 4.5 bits per weight and Q8\_0 about 8.5, so a 4-bit Supra-50M would take about 30 MB (estimated
 from the parameter count), close to our 27.6 MB Q8\_0 file, and \citet{dettmers-zettlemoyer-2023-case} find that at
 a fixed number of model bits, 4-bit precision with more parameters is usually the better trade-off. We compared the
-two models only zero-shot, not after continued pretraining, and did not measure their speed. Neither base model had
+two models only zero-shot, not after continued pretraining, and measured their speed only in our GPU harness (12--18
+vs 16--26 ms per query, partly on a shared GPU), not on a CPU. Neither base model had
 seen chat; both trail the unpruned n-gram model on IRC.
 
 \begin{table}[t]
@@ -383,14 +389,16 @@ FineWeb & 15.0 / 27.1 & \textbf{24.8 / 37.7} \\
 
 \subsection{Typos: repair in the decoder or in the model?}
 
-Typing every word with an error costs the decoder without repair 8.4--8.8 KSR points on the development splits
-(Table~\ref{tab:typos}). Repair recovers 36--48\% of that loss at a clean cost of 0.1--0.5 points and raises the
-share of mistyped words that end correct from 48--62\% to 72--84\%; Correct is well above zero without repair
-because it also counts words accepted before the error. The error weight matters little between 0.003 and 0.03;
-higher weights cost more on clean input. At a realistic share of mistyped words, the effect on keystrokes is small:
-with $r = 10\%$, the formula of \S\ref{sec:benchmark} gives a KSR change from repair of $+0.21$ points on chat,
-$-0.15$ on casual text and $+0.25$ on writing. The benefit of repair is in words that end correct, not in saved
-keystrokes.
+Under the earlier ghost-text rule (\S\ref{sec:benchmark}), typing every word with an error costs the decoder without
+repair 8.4--8.8 KSR points on the development splits (Table~\ref{tab:typos}), and repair recovers 36--48\% of that
+loss and raises Correct from 48--62\% to 72--84\%; these gains count corrections that \texttt{suggest()} does not
+show. Without repair the top candidate always extends the typed letters, so the n-gram and no-repair rows are the
+same under both rules; with repair, the released rule can only lower the numbers with typos. Correct is well above
+zero without repair because it also counts words accepted before the error. On clean input, repair costs 0.1--0.5
+KSR points, more at higher error weights. With $r = 10\%$, the formula of \S\ref{sec:benchmark} gives a KSR change
+from repair of $+0.21$ points on chat, $-0.15$ on casual text and $+0.25$ on writing under the earlier rule, and
+less under the released one. What remains is the candidate bar, where repair offers corrections; we did not run the
+bar without repair, so how much of its Correct@3 is due to repair is unknown.
 
 We also fine-tuned the model on typos: 40M tokens from the continued-pretraining checkpoint, half the usual corpus
 mix and half 600,000 examples of the form \tok{context <|typed|> letters <|word|> word </s>} with the loss on the
@@ -408,8 +416,9 @@ work.
 
 On the test splits, with every word mistyped, Typeling's chat KSR@3 falls from 59.4\% to 55.7\% and the intended
 word is picked from the bar for 94.5\% of the mistyped words, against 49.6\% $\to$ 40.5\% (71.0\%) for the 5 MB
-n-gram model; the other domains and the ghost-text results, which overstate \texttt{suggest()}
-(\S\ref{sec:benchmark}), are in Appendix~\ref{app:typos}.
+n-gram model, which does not repair typos. These are two different systems, and Correct@3 also counts words picked
+before the error, so the comparison does not isolate repair. The other domains and the ghost-text results, which
+overstate \texttt{suggest()} (\S\ref{sec:benchmark}), are in Appendix~\ref{app:typos}.
 
 \begin{table}[t]
 \centering
@@ -433,7 +442,9 @@ Typo fine-tuned$^\ddagger$ & 34.0 $\to$ 28.8 & 22.6 $\to$ 16.7 & 24.5 $\to$ 19.1
 \end{tabular}
 \caption{Development splits, 1,000 words per source: ghost-text KSR (\%) clean $\to$ with every word mistyped, and in
 parentheses Correct, the share of mistyped words that end correct (including words accepted before the error).
-Without n-gram fusion. $^\ddagger$Decoded in its typed mode.}
+Without n-gram fusion. Earlier ghost-text rule (\S\ref{sec:benchmark}): with typos, the repair and fine-tuned rows
+count corrections that \texttt{suggest()} does not show; the n-gram and no-repair rows are the same under both
+rules. $^\ddagger$Decoded in its typed mode.}
 \label{tab:typos}
 \end{table}
 
@@ -493,9 +504,9 @@ threads), the first 300 words per development source (for FineWeb, one document)
 
 Adapting an off-the-shelf 25M-parameter model to chat and writing text, in under an hour on a laptop GPU, and
 decoding it at the word level saves 9 points more keystrokes on held-out chat than an unpruned trigram model trained
-on the same corpus; most of the gain over the zero-shot base model comes from the adaptation. Repairing typos in the
-decoder leaves the model unchanged and keeps most mistyped words correct in a candidate bar, although it saves few
-keystrokes at realistic error rates. The size advantage is so far only in the file: the decoder runs on PyTorch, with
+on the same corpus; on development data, most of that gain (7.7 of 9.3 points) comes from the adaptation rather than
+from the base model. Typo repair in the decoder leaves the model unchanged and offers corrections in the candidate
+bar; how much it adds there over no repair remains to be measured. The size advantage is so far only in the file: the decoder runs on PyTorch, with
 its memory, startup time and long-context latency, which a llama.cpp port of the decoder should address.
 
 \section*{Limitations}
@@ -510,7 +521,8 @@ its memory, startup time and long-context latency, which a llama.cpp port of the
   \item \textbf{Optimistic typo benchmark.} The errors come from the same keyboard model that the repair inverts, the
   context is never mistyped, Correct includes words accepted before the error, and ghost-text results with typos
   counted corrections that \texttt{suggest()} does not show (\S\ref{sec:benchmark}).
-  \item \textbf{Decoder contribution not isolated.} No simpler token-to-word decoding was run as a baseline.
+  \item \textbf{Decoder contribution not isolated.} No simpler token-to-word decoding was run as a baseline, and the
+  candidate bar was not measured without typo repair.
   \item \textbf{One typo fine-tuning recipe.} A single run of one recipe, evaluated only with its typed decoding
   mode.
   \item \textbf{Footprint measured in PyTorch only.} Accuracy is for the 16-bit weights and latency for float32, both
@@ -533,7 +545,8 @@ Once the model is downloaded, Typeling runs offline: what the user types, and th
 on the machine. All corpora are distributed under permissive licenses and are attributed in the release, with two
 caveats: SODA was generated with InstructGPT, whose terms restrict using outputs to build competing models, and
 FineWeb's ODC-By license covers the dataset, while its use is also subject to Common Crawl's terms of use and the
-underlying web pages remain their authors'. Emails, URLs and phone numbers were removed from the training text, but
+underlying web pages remain their authors'. Emails, URLs and phone numbers were removed from the web and human chat
+text (SODA, which is generated, was used as released), but
 we did not test the released model for verbatim reproduction of training text or of personal information. The
 model can suggest offensive words or reproduce biases of web and chat text; the decoder does not suggest words from
 a blocklist, but other harmful completions are possible.
@@ -588,6 +601,6 @@ The repository contains the corpus builder (\texttt{training/build.py}), the tok
 export to safetensors and GGUF (\texttt{lm/export.py}), and \texttt{docs/model-plan.md}, which records every run
 in this paper with its command and results; \texttt{bench/results.jsonl} stores the raw benchmark output. All
 results were produced before the ghost-text rule of the benchmark was changed to follow \texttt{suggest()}
-(\S\ref{sec:benchmark}).
+(\S\ref{sec:benchmark}); commit \texttt{0c26442} is the last with the earlier rule.
 
 \end{document}

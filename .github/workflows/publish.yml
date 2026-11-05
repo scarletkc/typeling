@@ -1,4 +1,5 @@
-# Publishes the typeling package to PyPI when a GitHub release is published (tag vX.Y.Z = version in pyproject.toml).
+# Publishes the typeling package to PyPI when a GitHub release is published (tag vX.Y.Z = version in pyproject.toml),
+# after building the technical report with the same version and attaching it to the release.
 # Uses PyPI trusted publishing: no token is stored; PyPI must list this repository, publish.yml and the environment
 # "pypi" as a trusted publisher of the project.
 name: Publish to PyPI
@@ -35,8 +36,34 @@ jobs:
           name: dist
           path: dist/
 
-  publish:
+  report:
     needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+      - name: Install Tectonic 0.17.0
+        run: |
+          curl -fsSL -o tectonic.tar.gz https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.17.0/tectonic-0.17.0-x86_64-unknown-linux-musl.tar.gz
+          echo "8533d07f9ccbd7a65824b9e0459041bca34af1eb33daba48f59215593753a3b7  tectonic.tar.gz" | sha256sum -c -
+          tar -xzf tectonic.tar.gz -C "$RUNNER_TEMP"
+      - name: Build the technical report
+        run: |
+          uv run --no-project --python 3.13 paper/version.py
+          cd paper && "$RUNNER_TEMP/tectonic" typeling.tex
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp paper/typeling.pdf typeling-technical-report.pdf
+          gh release upload "$GITHUB_REF_NAME" typeling-technical-report.pdf --clobber --repo "$GITHUB_REPOSITORY"
+
+  publish:
+    needs: [build, report]
     runs-on: ubuntu-latest
     environment:
       name: pypi
