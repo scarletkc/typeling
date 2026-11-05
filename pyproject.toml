@@ -5,14 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "typeling"
 version = "0.1.0"
-description = "Offline English typing prediction in pure Python: completes the current word and predicts the next one."
+description = "Offline English typing prediction: completes the current word, predicts the next one and fixes typos; a pure-Python n-gram kernel and an optional small language model."
 readme = "README.md"
 authors = [{ name = "scarletkc" }]
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.13"
 dependencies = []
-keywords = ["autocomplete", "word prediction", "next-word prediction", "language model", "kneser-ney", "n-gram"]
+keywords = ["autocomplete", "word prediction", "next-word prediction", "language model", "kneser-ney", "n-gram",
+            "typo correction"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -25,6 +26,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Text Processing :: Linguistic",
 ]
+
+[project.optional-dependencies]
+lm = ["torch>=2.7", "transformers>=5"]
 
 [project.urls]
 Homepage = "https://github.com/scarletkc/typeling"

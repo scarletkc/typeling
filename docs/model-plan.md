@@ -1,9 +1,10 @@
 # Plan: Typeling-25M, a small language model for typing prediction
 
-Status: milestone 0 done (section 12): the typing decoder (`lm/decode.py`) and the benchmark adapter (`lm/eval.py`)
-are implemented, the candidates are evaluated, and the base model is chosen. Milestone 1 in progress: the data
-pipeline (`lm/data.py`) and training script (`lm/train.py`) are implemented, and a 20M-token pilot already meets the
-v1 success criteria in full precision (section 13).
+Status: milestones 0–3 done. The base model is chosen (section 12); 150M tokens of continued pretraining (section 13);
+typos are handled in the decoder, not by fine-tuning (section 14); the decoder is packaged as `typeling.lm` (optional
+extra `typeling[lm]`) with typo repair, a candidate bar, n-gram fusion and the user model; the release files are
+exported and the final test-split evaluation meets the v1 success criteria (section 15). Next: the release
+(milestone 4), on the owner's go-ahead.
 
 ## 1. Goal
 
@@ -22,11 +23,13 @@ Decisions so far:
 | Name | Typeling; the model is Typeling-25M (the whole project is renamed accordingly) |
 | Approach | the least-effort route: full-parameter continued pretraining of a recent small base model, not training from scratch |
 | Base model | `SupraLabs/Supra2-Medium-Base` (25.4M parameters); fallback `SupraLabs/Supra-50M-Base` (section 2) |
-| Release files | fp16 safetensors (about 51 MB) and GGUF Q8_0 (about 27 MB, estimate); also GGUF Q4_K_M (about 18 MB, estimate) if milestone 3 shows its loss is small |
+| Release files | `scarletkc/Typeling-25M` on Hugging Face: fp16 safetensors (about 51 MB); `scarletkc/Typeling-25M-GGUF`: GGUF Q8_0 (about 27 MB, estimate); no 4-bit file: users can quantize the safetensors further with llama.cpp |
+| Product | the `typeling` package on PyPI: the n-gram kernel (no dependencies) plus the language model decoder `typeling.lm` (extra `typeling[lm]`: PyTorch, Transformers) and a terminal demo with a candidate bar |
 | Data | v1 reuses the existing corpus in `data/corpus/`; more data only if the results show it is the bottleneck |
 | Data licenses | permissive only (public domain, CC BY, ODC-By, Apache-2.0); no NC or share-alike data |
 | Weights license | Apache-2.0 (the base model's license), with a NOTICE that carries the base model and dataset attributions |
-| Typo-robust fine-tuning | included in v1 |
+| Typos | repaired in the decoder (keyboard error model, candidates scored by the model); the model is not fine-tuned on typos: a 40M-token typo fine-tuning experiment was worse than decoder repair on both clean and mistyped input (section 14) |
+| Candidates | the top 3 are the accuracy target (KSR@3, top3@i); the decoder's search is exact for the top 3, further candidates are best effort |
 | Hardware | the local RTX 5070 Ti laptop GPU (12 GB); rent a GPU only if a full training run would take more than a few hours |
 
 ## 2. Base model
@@ -59,9 +62,7 @@ Qwen2.5-1.5B against 0.5B for next-word prediction and got 19.0% -> 20.1% top-1 
 2.4x the decoding cost (lexokeyboard.app, "Fitting a language model inside an Android keyboard", 2026). If Typeling
 misses the success criteria after milestone 3, the same pipeline is rerun on Supra-50M.
 
-File sizes are estimates from the parameter count until milestone 3 measures them: f16 about 51 MB, Q8_0 about 27 MB,
-Q4_K_M about 18 MB (llama.cpp keeps the tied embedding matrix, which is also the output tensor, at 6 bits, and the
-MLP intermediate size of 896 is not a multiple of 256, so the MLP down-projection falls back from K-quants).
+File sizes are estimates from the parameter count until milestone 3 measures them: f16 about 51 MB, Q8_0 about 27 MB.
 
 ## 3. Data
 
@@ -102,11 +103,13 @@ packing to 512 tokens, gradient clipping at 1.0.
      predictions after a space. The decoder keeps its own trailing-space handling (section 6). The rate was chosen in
      the milestone 1 comparison (section 13): 3% cost about 3% dev perplexity and 0.7 KSR points, 1% costs about 1%
      perplexity and still teaches the behavior.
-2. **Typo-robust fine-tuning.** Two special tokens are added (`<|typed|>`, `<|word|>`; the embedding matrix is
-   resized). Examples have the form `context <|typed|> noisy-prefix <|word|> intended-word`, where the noise model
-   applies QWERTY adjacent-key substitutions, omissions, insertions, adjacent transpositions, missing apostrophes
-   (dont, im) and casing errors; the context itself gets the same noise on about 5–10% of its words. These examples
-   are mixed with clean language-modeling data so ordinary prediction does not degrade.
+2. **Typo-robust fine-tuning (experiment, not in v1).** Two special tokens are added (`<|typed|>`, `<|word|>`; the
+   embedding matrix is resized). Examples have the form `context <|typed|> noisy-prefix <|word|> intended-word`, where
+   the noise model (`lm/typos.py`) applies QWERTY adjacent-key substitutions, omissions, insertions, adjacent
+   transpositions, missing apostrophes (dont, im) and casing errors; the context itself gets the same noise on 5% of
+   its words. These examples are mixed with clean language-modeling data. The 40M-token run lost 4–12 KSR points on
+   clean typing and still did worse on mistyped input than repair in the decoder (section 14), so v1 ships the
+   continued-pretraining model unchanged.
 3. **Calibration.** Fit a temperature on the dev split so the word probabilities used by display thresholds are
    calibrated.
 
@@ -114,13 +117,12 @@ packing to 512 tokens, gradient clipping at 1.0.
 
 - fp16 `safetensors` plus `config.json` and `tokenizer.json`, loadable with `transformers` as-is, for further
   fine-tuning and conversion to other formats.
-- GGUF Q8_0 via llama.cpp's converter (which supports Qwen3): the main release file.
-- GGUF Q4_K_M as a smaller variant, only if milestone 3 shows a small loss (simulated 4-bit quantization of Supra-50M
-  cost 0.4–1.1 KSR points zero-shot, section 12; a smaller model may lose more).
-- Every GGUF file is evaluated on the benchmark next to the fp16 weights; the model card reports the loss.
-- Only if the Q4 loss is significant and a 4-bit file is still wanted: a short quantization-aware training phase at
-  the end of training that simulates GGUF Q4_0 block quantization (blocks of 32 weights with one scale each) in the
-  forward pass, followed by a Q4_0 export. This is the approach of Google's QAT releases of Gemma 3 for llama.cpp.
+- GGUF Q8_0 via llama.cpp's converter (which supports Qwen3): the main release file. Converting it also checks that
+  llama.cpp handles the tokenizer.
+- No 4-bit file. At 25M parameters, Q4 would save only about 10 MB over Q8_0, which matters on phones rather than
+  desktops, and small models lose more to 4 bits (simulated 4-bit quantization cost Supra-50M 0.4–1.1 KSR points
+  zero-shot, section 12). Users who want one can quantize the safetensors with llama.cpp; the model card says so.
+- The Q8_0 file is evaluated on the benchmark next to the fp16 weights; the model card reports the loss.
 
 Direct weight edits (on the safetensors) are used only for problems that sit in individual token vectors; problems in
 the model's behavior (domain, trailing spaces) are fixed by training:
@@ -133,8 +135,9 @@ the model's behavior (domain, trailing spaces) are fixed by training:
 
 ## 6. Decoding for typing
 
-The model predicts tokens; the user needs words. `lm/decode.py` implements this with the same `topk(text, k)` and
-`suggest(text)` interface as the n-gram `Predictor`.
+The model predicts tokens; the user needs words. `typeling/lm.py` (`LMPredictor`) implements this with the same
+`topk(text, k)` and `suggest(text)` interface as the n-gram `Predictor`; `lm/decode.py` adds the experimental typed
+mode for typo-fine-tuned models.
 
 - Constraint: the text before the cursor is split into the context, the whitespace after it and the partially typed
   word. The context is cut before the trailing whitespace; the whitespace plus the typed letters (" kn") constrain the
@@ -144,11 +147,22 @@ The model predicts tokens; the user needs words. `lm/decode.py` implements this 
   divided by the probability of the constraint. Paths are explored with a beam (width 8); casings are merged.
 - Trailing spaces: with byte-level BPE the space belongs to the next token, so text ending in a space (the usual case
   before a next-word prediction) pushes the model toward junk tokens (section 12); the constraint above avoids it.
-- After the typo fine-tuning: feed `<|typed|> prefix <|word|>` and decode the intended word with the same beam, so
-  completion and correction (recie -> receive, tomm -> tomorrow) use one mechanism.
-- Glued words: a letter token without a space can extend a word the model would have ended ("much" + "for" ->
-  "muchfor"). These get very low probabilities; continued pretraining should reduce them further, and the decoder
-  filters them if they show up among the top candidates.
+- Typo repair (noisy channel): `typeling/keyboard.py` lists every string that one typing error (adjacent key, extra
+  key next to a neighbor, left-out letter or apostrophe, swapped letters, missing capital) turns into the typed
+  letters. Those that start a word of the n-gram vocabulary are ranked by unigram mass, and the best 4 become extra
+  constraints in the same beam, each weighted by the error probability (`typo_weight`, 0.003 relative to no error).
+  Completion and correction (tomm -> tomorrow, thnik -> think) use one search, and the number of model calls barely
+  changes. Corrections appear in `topk()` and the candidate bar; ghost text shows only extensions.
+- Candidates: the search stops once no unexplored path can beat the third-best word, so the top 3 are exact; more
+  candidates are the other words the search reached.
+- User model: the kernel's user model (words and word pairs the user typed) is mixed into the joint probabilities
+  before normalizing over the words that fit the typed letters, with the kernel's weight schedule (up to 0.3), so a
+  name the language model barely knows wins after a few uses while common words stay with the language model.
+- Context: the last 1,000 characters (section 14).
+- N-gram fusion (`ngram_weight`): the final probability mixes in the bundled n-gram model's. The language model's
+  short search misses rare long words (encyc -> encyclopedia) and its subword pieces can form non-words (don't +
+  know -> "don'tknow", "much" + "for" -> "muchfor"); the n-gram model's vocabulary fixes both. Known misspellings
+  from the n-gram model (recieve) are never suggested.
 - The context's key/value cache is reused across keystrokes.
 - Latency target per suggestion with the main GGUF file on a laptop CPU (normal power mode; power-saving mode is
   reported as the worst case): p95 at most 50 ms, p99 at most 100 ms. 100 ms is about the limit of what feels
@@ -161,14 +175,16 @@ The model predicts tokens; the user needs words. `lm/decode.py` implements this 
 ## 7. Evaluation
 
 - Benchmark: `bench/eval.py`'s typing simulation on the dev splits (chat, casual, writing), with the n-gram model's
-  metrics: KSR, precision, suggestions shown, acc@0–3, top3@0, latency (mean and p99). `lm/eval.py` runs it on any
-  causal LM through the decoder, plus per-word perplexity and tokens per word. For speed it defaults to 2,000 words
-  per source; compare against the n-gram model at the same `--limit`.
+  metrics: KSR (ghost text), precision, suggestions shown, KSR@3 (a bar of 3 candidates, always shown), acc@0–3,
+  top3@0–3, latency (mean and p99). `lm/eval.py` runs it on any causal LM through the decoder, plus per-word
+  perplexity and tokens per word. For speed it defaults to 2,000 words per source; compare against the n-gram model
+  at the same `--limit`.
 - Resource use: file size, peak memory and per-suggestion latency on a laptop CPU with llama.cpp (milestone 3).
 - Baselines on the same benchmark: the strongest n-gram model the corpus allows (no pruning, 23.35 MB; built with
   `uv run training/build.py model --out data/ngram-unpruned.bin --budget 30e6`), the bundled 5 MB n-gram model,
   the base model before fine-tuning, Supra-50M, Pythia-14M and Pythia-31M (references only).
-- Robustness: the benchmark with synthetic typos in the typed prefixes, before and after typo fine-tuning.
+- Robustness: `lm/eval.py --typos` types every word of 3+ letters with a synthetic error and compares KSR and KSR@3
+  with clean typing on the same words (section 14).
 - Success criteria for v1 (targets to validate, not promises): with the main GGUF file on chat, at equal precision,
   KSR at least 3 points and acc@0 at least 5 points above the unpruned 23 MB n-gram model; latency target met.
 - The test splits stay sealed until the final comparison.
@@ -185,17 +201,17 @@ a dependency of the runtime package.
 
 0. **Setup and gate** (done, section 12). PyTorch environment, typing decoder, benchmark adapter, zero-shot
    evaluation of the candidates, trailing-space and tokenization checks, choice of the base model.
-1. Continued pretraining on the existing corpus, starting with a short pilot that checks how fast the domain gap
-   closes.
-   Before milestone 2: a CPU latency check (the decoder in PyTorch on the CPU as an upper bound, then `llama-bench` on
-   an F16 / Q8_0 GGUF conversion), because a miss would change the decoder and possibly the training.
-2. Typo-robust fine-tuning.
-3. GGUF export (Q8_0, Q4_K_M), evaluation against the baselines, CPU latency and memory.
-4. Release: Hugging Face repository `Typeling-25M` with fp16 weights, the GGUF files, model card, NOTICE and the
-   reference decoder.
+1. **Continued pretraining** (done, section 13) on the existing corpus, after a short pilot, and a CPU latency check
+   of the decoder in PyTorch.
+2. **Typos and the product** (done, section 14): typo benchmark, decoder typo repair, the typo fine-tuning experiment
+   (not adopted), the decoder packaged as `typeling.lm` with a candidate bar and n-gram fusion, demo and tests.
+3. GGUF export (Q8_0), final evaluation on the test split against the baselines, CPU latency and memory.
+4. Release: `scarletkc/Typeling-25M` (fp16 safetensors, model card, NOTICE), `scarletkc/Typeling-25M-GGUF` (Q8_0),
+   the GitHub repository made public, and the `typeling` package on PyPI.
 5. Optional: more data (section 3), if milestone 3 shows the corpus is the bottleneck.
-6. Optional: integration into the n-gram kernel as an optional dependency, in two tiers like the Lexo keyboard: the
-   n-gram model and the user model answer instantly, and the language model's ranking is fused in when it arrives.
+6. Optional: asynchronous two tiers like the Lexo keyboard: the n-gram model and the user model answer instantly,
+   and the language model's ranking replaces them when it arrives (v1 fuses both synchronously); a llama.cpp port of
+   the decoder; typo fine-tuning only if a better recipe closes the remaining gap without hurting clean typing.
 
 Fallbacks if the fine-tuned base model disappoints: the same pipeline on Supra-50M-Base; failing that, train a
 15M-parameter model from scratch with a 16k BPE tokenizer on an expanded corpus (an earlier version of this plan,
@@ -224,17 +240,21 @@ kept in git history).
 ## 11. Repository layout
 
 ```text
+typeling/
+  lm.py          typing decoder: LMPredictor (typo repair, candidates, n-gram fusion)  implemented
+  keyboard.py    QWERTY error model used by the typo repair                           implemented
 lm/
-  decode.py      typing decoder (beam over words, typed-prefix completion)          implemented
-  eval.py        typing benchmark, perplexity and simulated Q4 for causal LMs      implemented
-  data.py        tokenize data/corpus into packed token streams                    implemented
-  typos.py       noise model for typo-robust fine-tuning
-  train.py       continued pretraining (fine-tuning to follow) (PyTorch)            implemented
-  export.py      safetensors, GGUF, model card
+  decode.py      experimental typed mode for typo-fine-tuned models                   implemented
+  eval.py        typing and typo benchmarks, perplexity, simulated Q4                 implemented
+  data.py        tokenize data/corpus into packed token streams                       implemented
+  typos.py       typo simulation and typo fine-tuning data (experiment)               implemented
+  train.py       continued pretraining and typo fine-tuning (PyTorch)                 implemented
+  export.py      fp16 safetensors, GGUF, model cards
 ```
 
-Training dependencies (torch, transformers, gguf) are declared as uv inline script metadata, never as runtime
-dependencies of the kernel package.
+Training dependencies (torch, transformers, gguf) are declared as uv inline script metadata. The runtime package
+stays dependency-free except for `typeling.lm`, which needs the optional extra `typeling[lm]` and is imported by
+nothing else in the package.
 
 ## 12. Milestone 0 results
 
@@ -392,6 +412,130 @@ Per-word perplexity: SODA 19.1, WildChat 156, oasst2 115, IRC 312, FineWeb 176.
 CPU with 4 threads, 300 words per source (`lm/eval.py --device cpu --threads 4 --no-ppl --limit 300`), per query
 mean (p95 / p99): SODA 21.2 ms (33.9 / 41.8), WildChat 18.4 ms (30.9 / 39.3), IRC 18.4 ms (34.0 / 46.8), FineWeb
 27.5 ms (53.3 / 76.9). Short texts meet the target (p95 ≤ 50 ms, p99 ≤ 100 ms) with room to spare, before any
-llama.cpp speedup. Long documents are slower because the decoder cuts the context to the last 2,000 characters on
-every word, which shifts the token prefix and defeats the key/value cache once a text is longer than that; moving the
-cut point in large steps instead would fix it.
+llama.cpp speedup. Long documents are slower because the per-query cost grows with the context: 15 ms with 30 tokens
+of context, 18 ms with 140, 19 ms with 250 and 25 ms with 480 (beam 8, same setup). In this PyTorch decoder every
+beam step copies the whole key/value cache for each hypothesis (`reorder_cache`); llama.cpp can share the context's
+cache between sequences. Separately, texts longer than 2,000 characters lost the cache on every word, because the
+context was cut at exactly the last 2,000 characters; the cut point now moves in steps of 500 characters
+(`CONTEXT_STEP`). That case is not part of these measurements (300 words stay within the first 2,000 characters).
+
+## 14. Milestone 2 results: typos
+
+Typo benchmark (`lm/eval.py --typos --limit 1000`, dev split, 1,000 words per source): every word of 3+ letters is
+typed with a synthetic error (one, two with probability 0.2; 76–82% of all words), and the KSR is compared with clean
+typing of the same words. Ghost-text KSR, clean -> with typos (share of mistyped words that still end correct):
+
+| Model, decoder | Chat | Casual (IRC) | Writing (FineWeb) |
+|---|---|---|---|
+| n-gram, bundled 5 MB | 29.41% -> 20.39% (48.4%) | 21.62% -> 14.28% (39.2%) | 22.73% -> 14.67% (39.2%) |
+| cpt-150m, no repair | 41.34% -> 32.53% (61.7%) | 28.79% -> 20.20% (47.9%) | 34.71% -> 26.34% (54.3%) |
+| **cpt-150m, repair 0.003** | 41.13% -> **36.53%** (84.3%) | 28.33% -> **22.82%** (72.1%) | 34.62% -> **29.60%** (82.0%) |
+| cpt-150m, repair 0.01 | 40.97% -> 36.70% (85.1%) | 28.05% -> 22.82% (73.7%) | 34.30% -> 29.69% (82.0%) |
+| cpt-150m, repair 0.03 | 40.67% -> 36.65% (85.5%) | 27.59% -> 22.73% (74.7%) | 33.58% -> 29.60% (82.8%) |
+| typo fine-tuned, typed mode | 33.98% -> 28.78% (73.9%) | 22.58% -> 16.73% (62.5%) | 24.52% -> 19.10% (61.4%) |
+
+- Typing every word with an error costs the plain decoder 8.4–8.8 KSR points. Decoder repair (weight 0.003, at most
+  4 corrections, from 2 typed letters) recovers 36–48% of that (the drop shrinks to 4.6 points on chat, 5.5 casual,
+  5.0 writing) at a clean cost of 0.1–0.5 points, and the share of mistyped words that end correct rises from 48–62%
+  to 72–84%.
+- The error weight hardly matters on mistyped input between 0.003 and 0.03; higher weights cost more on clean
+  input, so the default is 0.003.
+- What repair cannot reach: words with two errors (one in five mistyped words here), and errors whose correction is
+  not a prefix of a vocabulary word.
+- At a realistic share r of mistyped words, KSR is about (1 - r) x clean + r x with typos: at r = 10%, 40.67% with
+  repair against 40.46% without on chat. The visible gain is in corrections, not in raw keystrokes.
+
+**Typo fine-tuning experiment.** `uv run lm/typos.py --model data/lm/runs/cpt-150m --out data/lm/tokens/typo` (600k
+examples, 47% with errors), then 40M tokens from cpt-150m (1,221 steps, lr 3e-4, half typo examples with the loss on
+the intended word only, half the usual corpus mix), decoded in typed mode (`lm/decode.py`). The typo dev loss fell
+from 5.78 to 1.14, but the clean dev loss stayed 0.07–0.12 above cpt-150m (FineWeb 3.79 -> 3.90, WildChat 3.52 ->
+3.64), and the typing benchmark is worse in every column: clean KSR 6–10 points below cpt-150m with repair, mistyped
+KSR 6–11 points below; on SODA, its acc@full (the intended word on top after the whole mistyped word) was 84%. Typos
+stay in the decoder; the model is released without typo fine-tuning.
+
+**Candidate bar, n-gram fusion, unknown prefixes.** Same benchmark, typo weight 0.003; ghost-text KSR and KSR@3 (bar
+of 3 candidates), clean / with typos, and the precision of ghost text with typos:
+
+| Decoder | Chat KSR | Chat KSR@3 | Casual KSR | Casual KSR@3 | Writing KSR | Writing KSR@3 | Precision (typos), chat |
+|---|---|---|---|---|---|---|---|
+| n-gram weight 0 | 41.13 / 36.53 | 56.51 / 52.66 | 28.33 / 22.82 | 45.28 / 39.70 | 34.62 / 29.60 | 50.53 / 45.64 | 46.1% |
+| n-gram weight 0.1 | 41.18 / 36.54 | 56.76 / 52.77 | 27.95 / 22.39 | 45.57 / 40.03 | 34.38 / 29.15 | 50.75 / 45.90 | 47.7% |
+| n-gram weight 0.2 | 40.84 / 36.02 | 56.54 / 52.45 | 27.59 / 22.08 | 45.62 / 40.18 | 33.97 / 28.47 | 50.84 / 45.73 | 49.2% |
+| n-gram weight 0.3 | 40.35 / 35.35 | 56.34 / 52.34 | 27.37 / 21.79 | 45.28 / 39.72 | 33.47 / 27.89 | 51.01 / 45.56 | 50.3% |
+| **n-gram 0.1, unknown weight 0.1** | 41.18 / 36.66 | 56.76 / 52.91 | 27.95 / 22.51 | 45.55 / 40.30 | 34.38 / 29.38 | 50.75 / 45.97 | 47.8% |
+
+- A bar of 3 candidates saves 15–17 points more than ghost text alone (KSR@3 56.8% on chat), and the intended word
+  is among the top 3 for 87–94% of mistyped words at some point while typing them (Correct@3).
+- N-gram fusion at 0.1 adds 0.2–0.3 points of KSR@3 and 1–2 points of precision, at most 0.4 points of ghost-text
+  KSR; higher weights cost more. The visible gain is outside the metric: rare words the search misses
+  (encyc -> encyclopedia, 0.93 with fusion, absent without) and fewer non-words among candidates 4–5.
+- Lowering the weight of typed letters that start no vocabulary word to 0.1 changes nothing on clean input and
+  adds 0.1–0.3 points with typos; "I will recie" now ranks receive first (the model had learned "recieve").
+- Defaults: typo weight 0.003, unknown weight 0.1, n-gram weight 0.1.
+
+**User model.** `LMPredictor(user=path)` learns with `learn()` and stores the same file as the n-gram kernel; the
+user model is mixed into the joint probabilities (section 6). After one sentence is learned three times, "I love Zorb"
+ranks "Zorblaxa" first, and common completions do not change (`tests/test_lm.py`). The dev benchmark with `--learn`
+shows no gain (chat KSR 41.19% -> 40.88%, KSR@3 56.76% -> 56.65%; the n-gram kernel moves by at most 0.4 points
+too): its texts come from thousands of different people, so there is little personal vocabulary to learn. Measuring
+it would take text written by one person.
+
+**Context length and beam** (typing benchmark, 1,000 words per source). With 1,000 characters of context instead of
+2,000, chat and IRC are unchanged (their texts are shorter) and FineWeb loses 0.1 points (KSR 34.28% vs 34.38%,
+KSR@3 50.68% vs 50.75%), while its CPU time drops from 36 ms mean (76 / 110 ms p95 / p99) to 33 ms (63 / 82 ms).
+Beam 6 is 0.1–0.6 points worse than beam 8 and not faster. Defaults: 1,000 characters, beam 8.
+
+**CPU latency, v1 decoder** (typo repair and n-gram fusion on, PyTorch float32, 4 threads, 300 words per source),
+mean (p95 / p99): SODA 24.8 ms (39.1 / 51.1), WildChat 23.7 ms (39.9 / 52.0), oasst2 23.5 ms (44.7 / 56.0), IRC
+23.4 ms (47.7 / 59.7), FineWeb 32.8 ms (63.0 / 82.2). Chat and casual text meet the target (p95 ≤ 50 ms, p99 ≤ 100
+ms); long writing meets p99 but not p95. Most of the time goes into copying the context's key/value cache for every
+hypothesis at every beam step (`reorder_cache`, then `torch.cat` when the cache grows); a decoder on llama.cpp, whose
+sequences can share the context's cache cells, would remove it.
+
+**Export checks.** `lm/export.py`: fp16 safetensors, 50.75 MB, with the same dev perplexity as float32 on every
+source (SODA 19.1, WildChat 156.0, oasst2 115.3, IRC 311.5, FineWeb 176.2). GGUF Q8_0, 27.55 MB (llama.cpp b11953),
+against an F16 GGUF on 380k characters of dev text (190 chunks of 512 tokens, `llama-perplexity --kl-divergence`):
+perplexity 30.025 vs 30.000 (+0.08%), mean KL divergence 0.00094, the same top token 97.9% of the time. The converter
+does not know the tokenizer's pre-tokenizer hash; `lm/export.py` maps it to GPT-2's (the same regex). llama.cpp then
+tokenizes exactly like Transformers, except that it does not add the space Transformers puts before every text, and
+it adds no BOS token: `"</s> Thank you so"` -> `[2, " Thank", " you", " so"]`, the decoder's own input.
+The exported tokenizer config names `PreTrainedTokenizerFast` and sets `add_prefix_space`, so Transformers 4.57
+loads it and tokenizes like 5.22 (Transformers 5 writes `TokenizersBackend`, unknown to 4.x, and 4.x otherwise
+drops the prefix space).
+
+## 15. Milestone 3 results: final evaluation
+
+Sealed test split, run once with the released files (`data/release/Typeling-25M`, fp16) and the v1 decoder defaults
+(typo weight 0.003, unknown weight 0.1, n-gram weight 0.1, 1,000 characters of context, beam 8); 2,000 words per
+source for typing, 1,000 for typos. Commands: `uv run lm/eval.py --model data/release/Typeling-25M --final --limit
+2000`, the same with `--typos --limit 1000`, `python bench/eval.py --final --limit 2000` (with `--model
+data/ngram-unpruned.bin` for 23 MB) and `uv run lm/eval.py --ngram --final --typos --limit 1000`.
+
+| Domain | n-gram 5 MB: KSR / KSR@3 | n-gram 23 MB: KSR / KSR@3 | Typeling-25M: KSR / KSR@3 | Precision, 23 MB -> Typeling |
+|---|---|---|---|---|
+| Chat | 31.58% / 48.78% | 34.08% / 50.64% | **43.12% / 57.99%** | 51.2% -> 54.7% |
+| Casual (IRC) | 22.69% / 38.85% | 24.42% / 40.36% | **29.75% / 46.83%** | 42.7% -> 47.0% |
+| Writing (FineWeb) | 22.30% / 40.56% | 23.86% / 41.46% | **32.40% / 49.94%** | 44.1% -> 49.7% |
+
+acc@0 / top3@0, n-gram 23 MB -> Typeling-25M: SODA 30.00% / 46.90% -> 43.40% / 62.50%, WildChat 22.55% / 35.50% ->
+31.25% / 45.85%, oasst2 18.90% / 30.65% -> 28.10% / 44.50%, IRC 13.85% / 23.95% -> 18.95% / 32.40%, FineWeb 15.00% /
+27.10% -> 24.80% / 37.70%. Per-word perplexity: SODA 17.7, WildChat 180.2, oasst2 107.2, IRC 322.6, FineWeb 174.9.
+
+Typos (every word of 3+ letters mistyped), KSR clean -> with typos (Correct), ghost text and bar:
+
+| Domain | n-gram 5 MB | Typeling-25M |
+|---|---|---|
+| Chat | 32.05% -> 22.71% (48.5%); bar 49.60% -> 40.52% (71.0%) | 44.45% -> 40.07% (85.6%); bar 59.40% -> 55.69% (94.5%) |
+| Casual | 22.47% -> 14.82% (36.9%); bar 39.14% -> 29.26% (57.8%) | 28.64% -> 23.09% (73.1%); bar 46.54% -> 41.30% (88.4%) |
+| Writing | 24.34% -> 15.70% (40.9%); bar 42.26% -> 32.02% (62.9%) | 33.65% -> 27.91% (78.5%); bar 50.82% -> 45.51% (90.5%) |
+
+- **Success criteria met** (section 7): on chat, KSR is 9.0 points above the unpruned 23 MB n-gram model at higher
+  precision (target: 3), and acc@0 is 8.7–13.4 points higher on each chat source (target: 5). The numbers are for the
+  fp16 weights through the PyTorch decoder; the Q8_0 GGUF is within 0.1% perplexity (section 14) but has not been run
+  through a word-level decoder.
+- **Latency target** met on chat and casual text, p99 met on long writing, p95 missed there (63 ms, section 14).
+  llama.cpp on the Q8_0 file, 4 threads: 11,900 tokens/s prompt processing (pp256), 2,800 tokens/s single-token
+  generation (`llama-bench -t 4 -p 64,256 -n 16`).
+- Dev and test agree within about a point per domain, except WildChat (dev KSR 37.15% at 1,000 words, test 42.16%
+  at 2,000), where the test sample happens to be easier for both models (the 23 MB n-gram model goes from 28.9% on
+  dev to 34.8% on test).

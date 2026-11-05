@@ -1,19 +1,28 @@
 # Typeling
 
-Offline English typing prediction: completes the word being typed and predicts the next word.
+Offline English typing prediction: completes the word being typed, predicts the next word and fixes typos.
 
-This repository contains the `typeling` package, a dependency-free n-gram autocomplete kernel in pure Python
-(documented below), and the training of Typeling-25M, a small transformer language model for the same task, which is
-in progress: see [docs/model-plan.md](docs/model-plan.md) for the plan and the results so far.
+The `typeling` package has two predictors with the same interface:
+
+- `typeling.Predictor`: a dependency-free n-gram kernel in pure Python with a bundled 5 MB model.
+- `typeling.lm.LMPredictor`: the typing decoder for [Typeling-25M](https://huggingface.co/scarletkc/Typeling-25M),
+  a 25M-parameter transformer language model trained for typing, with typo repair (optional extra
+  `typeling[lm]`: PyTorch and Transformers).
+
+Training and evaluation of the language model are in `lm/`; see [docs/model-plan.md](docs/model-plan.md) for the plan,
+the experiments and their results.
 
 ## Features
 
-- **Offline and private.** No network access at runtime; what the user types never leaves the machine.
-- **Pure Python, no dependencies.** The runtime uses only the standard library (Python 3.13+).
-- **Small and fast.** The bundled model is at most 5 MB, loads in milliseconds and answers a keystroke in tens of
-  microseconds.
+- **Offline and private.** No network access at runtime (the language model is downloaded once); what the user types
+  never leaves the machine.
+- **Pure Python, no dependencies.** The n-gram kernel uses only the standard library (Python 3.13+).
+- **Small and fast.** The bundled n-gram model is at most 5 MB, loads in milliseconds and answers a keystroke in tens
+  of microseconds; the language model answers in tens of milliseconds on a laptop CPU.
 - **Completion and prediction.** Completes the current word (`Let me kn` → `ow`) and predicts the next one after a
-  space (`Thank you so ` → `much`).
+  space (`Thank you so ` → `much`), as ghost text or as a bar of candidates.
+- **Typo repair.** With the language model, mistyped words are corrected from keyboard errors (`See you tomm` →
+  *tomorrow*, `What do you thnik` → *think*).
 - **Natural output.** Handles contractions such as *I'm* and *don't* and restores casing (*I*, *English*, sentence
   starts, ALL-CAPS input).
 - **Learns locally.** Adapts to the user's own words and phrases and stores them in a local JSON file.
@@ -24,7 +33,8 @@ in progress: see [docs/model-plan.md](docs/model-plan.md) for the plan and the r
 ## Quick start
 
 ```bash
-pip install .
+pip install typeling            # n-gram kernel, no dependencies
+pip install "typeling[lm]"      # plus the language model decoder (PyTorch, Transformers)
 ```
 
 ### Python API
@@ -48,24 +58,44 @@ p.save()                       # write the user model back to user.json
 alternative model file) and the keyword-only options `next_threshold` (default 0.3), `complete_threshold` (0.3),
 `cache_weight` (0.1), `allow_blocked` (False) and `use_context` (True).
 
+With the language model:
+
+```python
+from typeling.lm import LMPredictor
+
+p = LMPredictor()                    # downloads scarletkc/Typeling-25M once; or a repo id / local directory
+p.topk("See you tomm", 3)            # [('tomorrow', ...), ...]  corrections are candidates too
+p.suggest("Let me kn")               # 'ow'    ghost text only extends what was typed
+p.topk("I'm going to ", 5)           # the top 3 are exact, further candidates are best effort
+```
+
+`LMPredictor(model, user)` takes the same user model file as `Predictor`, with the same `learn()` and `save()`. It
+also accepts `device` (`"cpu"` or `"cuda"`, default: CUDA if available), `typo_weight` (default 0.003, 0 turns typo
+repair off), `ngram_weight` (0.1, share of the n-gram model in the probabilities), `context_chars` (1000),
+`beam` (8), `allow_blocked` and the display thresholds.
+
 ### Terminal demo
 
 ```bash
 python -m typeling                  # or: typeling
+python -m typeling --lm             # use Typeling-25M (needs typeling[lm]); --lm DIR for a local model
 python -m typeling --no-learn       # do not learn or save your words
 python -m typeling --bench          # measure per-keystroke latency
 echo "I wan" | python -m typeling   # pipe mode: prints "I wan[t]"
 ```
 
+The line shows the best suggestion as grey ghost text; the bar below it shows the top candidates.
+
 | Key | Action |
 |---|---|
-| Tab / Right | accept the suggestion |
-| Esc | hide the suggestion |
+| Tab / Right | accept the highlighted candidate (the first one by default; it replaces a mistyped word) |
+| Up / Down | move the highlight in the candidate bar |
+| Esc | hide the suggestions |
 | Ctrl+W | delete the previous word |
 | Enter | new line (the finished line is learned unless `--no-learn` is given) |
 | Ctrl+C | quit |
 
-Learned words are stored in `~/.typeling/user.json` and saved on exit.
+Learned words are stored in `~/.typeling/user.json` (used by both models) and saved on exit.
 
 ## How it works
 
@@ -89,7 +119,9 @@ Learned words are stored in `~/.typeling/user.json` and saved on exit.
 
 `bench/eval.py` simulates typing the held-out dev split of each corpus (created by `uv run training/build.py fetch`)
 and reports how much the suggestions help. For each word it "types" 0, 1, 2, ... letters; when the top suggestion is
-the target word and passes the display threshold, the simulated user accepts it with one keystroke.
+the target word and passes the display threshold, the simulated user accepts it with one keystroke (ghost text);
+with a candidate bar, the user picks the target with one keystroke as soon as it is among the top 3. `lm/eval.py`
+runs the same simulation on the language model, and `--typos` repeats it with every word mistyped.
 
 ```bash
 python bench/eval.py                                                # dev split, all sources
@@ -111,12 +143,12 @@ python bench/eval.py --limit 2000 --sources soda fineweb --no-save   # quick run
 
 | Metric | Definition |
 |---|---|
-| KSR | keystroke savings rate: 1 − keystrokes used / letters in the target words |
+| KSR | keystroke savings rate with ghost text: 1 − keystrokes used / letters in the target words |
 | Precision | share of displayed suggestions that were accepted |
 | Shown | suggestions displayed per word |
-| KSR (always shown) | KSR if every top suggestion were displayed (both thresholds 0) |
+| KSR@3 | keystroke savings rate with a bar of the top 3 candidates, always shown |
 | acc@i | share of words whose top candidate is correct after typing i letters (acc@0 = next-word accuracy) |
-| top3@0 | share of words among the top 3 candidates before any letter is typed |
+| top3@i | share of words among the top 3 candidates after typing i letters |
 | OOV | share of words missing from the model vocabulary |
 
 Results are reported per source and pooled into *chat* (SODA, WildChat, oasst2), *casual* (Ubuntu IRC) and
@@ -124,26 +156,41 @@ Results are reported per source and pooled into *chat* (SODA, WildChat, oasst2),
 
 ## Results
 
-Dev split, bundled 5.00 MB model, default thresholds (next word 0.3, completion 0.3), 20,000 target words per source
-(oasst2: all 9,251), measured with `python bench/eval.py`:
+**Typeling-25M against the n-gram kernel**, on the sealed test split (2,000 words per source; KSR with ghost text /
+KSR@3 with a bar of 3 candidates):
 
-| Domain | Source | KSR | Precision | Shown | KSR (always shown) | acc@0 | acc@1 | acc@2 | top3@0 | OOV |
+| Domain | n-gram, bundled 5 MB | n-gram, unpruned 23 MB | Typeling-25M |
+|---|---|---|---|
+| chat (SODA, WildChat, oasst2) | 31.6% / 48.8% | 34.1% / 50.6% | **43.1% / 58.0%** |
+| casual (Ubuntu IRC) | 22.7% / 38.9% | 24.4% / 40.4% | **29.8% / 46.8%** |
+| writing (FineWeb) | 22.3% / 40.6% | 23.9% / 41.5% | **32.4% / 49.9%** |
+
+With every word of 3+ letters mistyped, chat KSR drops from 32.1% to 22.7% with the n-gram kernel and from 44.5% to
+40.1% with Typeling-25M, which repairs the errors (86% of the mistyped words end correct, against 48%). Next-word
+accuracy, typo results per domain, latency and training details are in the
+[model card](https://huggingface.co/scarletkc/Typeling-25M) and [docs/model-plan.md](docs/model-plan.md).
+
+**The n-gram kernel** on the dev split, bundled 5.00 MB model, default thresholds (next word 0.3, completion 0.3),
+20,000 target words per source (oasst2: all 9,251), measured with `python bench/eval.py`:
+
+| Domain | Source | KSR | Precision | Shown | KSR@3 | acc@0 | top3@0 | top3@1 | top3@2 | OOV |
 |---|---|---|---|---|---|---|---|---|---|---|
-| chat | SODA | 37.3% | 58.3% | 1.44 | 41.6% | 28.6% | 61.2% | 74.6% | 46.6% | 0.3% |
-| chat | WildChat | 30.3% | 47.8% | 1.59 | 34.8% | 21.3% | 43.3% | 55.1% | 32.4% | 2.0% |
-| chat | oasst2 | 26.2% | 46.4% | 1.62 | 30.9% | 18.1% | 42.3% | 55.7% | 30.3% | 1.3% |
-| casual | Ubuntu IRC | 22.8% | 43.8% | 1.58 | 27.0% | 13.8% | 36.8% | 50.8% | 24.5% | 1.7% |
-| writing | FineWeb | 23.1% | 43.2% | 1.68 | 28.3% | 14.3% | 35.2% | 46.7% | 23.8% | 2.9% |
-| **chat** | pooled | **32.1%** | **51.5%** | 1.54 | 36.6% | | | | | |
-| **casual** | pooled | **22.8%** | **43.8%** | 1.58 | 27.0% | | | | | |
-| **writing** | pooled | **23.1%** | **43.2%** | 1.68 | 28.3% | | | | | |
+| chat | SODA | 37.3% | 58.3% | 1.44 | 54.5% | 28.6% | 46.6% | 80.8% | 89.6% | 0.3% |
+| chat | WildChat | 30.3% | 47.8% | 1.59 | 46.7% | 21.3% | 32.4% | 59.4% | 69.5% | 2.0% |
+| chat | oasst2 | 26.2% | 46.4% | 1.62 | 44.3% | 18.1% | 30.3% | 61.3% | 72.4% | 1.3% |
+| casual | Ubuntu IRC | 22.8% | 43.8% | 1.58 | 39.6% | 13.8% | 24.5% | 54.9% | 69.6% | 1.7% |
+| writing | FineWeb | 23.1% | 43.2% | 1.68 | 41.7% | 14.3% | 23.8% | 51.1% | 64.4% | 2.9% |
+| **chat** | pooled | **32.1%** | **51.5%** | 1.54 | **49.1%** | | | | | |
+| **casual** | pooled | **22.8%** | **43.8%** | 1.58 | **39.6%** | | | | | |
+| **writing** | pooled | **23.1%** | **43.2%** | 1.68 | **41.7%** | | | | | |
 
 - **Context matters.** With `--no-context` (typed letters and word frequency only), KSR with every suggestion shown
   drops to 15.3% (chat), 13.8% (casual) and 14.4% (writing), and next-word accuracy to about 2%.
 - **Thresholds trade savings for precision.** Lowering both thresholds to 0.15 raises chat KSR to 34.9% at 41%
   precision; raising them to 0.5 gives 27.9% at 65%. `python bench/eval.py --grid` prints the full grid.
-- **Speed.** A query takes 37–131 µs on average (p99 under 0.8 ms on long FineWeb documents) in pure Python on a
-  laptop CPU; the model loads in under 50 ms.
+- **Speed.** A query takes 41–115 µs on average (p99 under 0.7 ms on long FineWeb documents) in pure Python on a
+  laptop CPU; the model loads in under 50 ms. Typeling-25M takes 23–25 ms on chat and 33 ms on long text (PyTorch,
+  4 CPU threads).
 
 ## Building the model
 
@@ -182,22 +229,24 @@ detect misspellings.
 ## Project layout
 
 ```text
-typeling/              runtime package (standard library only)
+typeling/              runtime package (standard library only, except lm.py)
   predictor.py         public API: Predictor
   model.py             binary model format and n-gram scoring
   text.py              tokenizer shared by training and runtime
   user.py              local user model
+  keyboard.py          QWERTY typing-error model
+  lm.py                language model decoder: LMPredictor (typeling[lm])
   demo.py              terminal demo (python -m typeling)
   en.bin               bundled model
-training/build.py      corpus download and model build
+training/build.py      corpus download and n-gram model build
 bench/eval.py          typing-simulation benchmark
 tests/                 unit tests (python -m unittest discover tests)
-lm/                    Typeling-25M: typing decoder and benchmark for causal LMs (PyTorch, uv scripts)
+lm/                    Typeling-25M: data, training, typo experiments and benchmark (PyTorch, uv scripts)
 docs/model-plan.md     plan and results for Typeling-25M
 ```
 
 ## License
 
 The code is licensed under the [Apache License 2.0](LICENSE). The bundled model `typeling/en.bin` is licensed
-under the [Open Data Commons Attribution License (ODC-By) 1.0](https://opendatacommons.org/licenses/by/1-0/); see
-[NOTICE](NOTICE) for the required attributions.
+under the [Open Data Commons Attribution License (ODC-By) 1.0](https://opendatacommons.org/licenses/by/1-0/), and
+Typeling-25M under the Apache License 2.0; see [NOTICE](NOTICE) for the required attributions.

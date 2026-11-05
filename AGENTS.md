@@ -1,8 +1,9 @@
 # AGENTS.md
 
 Typeling: offline English typing prediction. The n-gram autocomplete kernel (`typeling/`, Python standard library
-only), its model build script (`training/build.py`) and benchmark (`bench/eval.py`), and the work on Typeling-25M, a
-small transformer model (`lm/`, plan and results in `docs/model-plan.md`). See README.md for an overview.
+only), its model build script (`training/build.py`) and benchmark (`bench/eval.py`); Typeling-25M, a small
+transformer model (training and evaluation in `lm/`, plan and results in `docs/model-plan.md`), and its typing
+decoder `typeling/lm.py` (optional extra `typeling[lm]`). See README.md for an overview.
 
 ## Commands
 
@@ -28,12 +29,25 @@ uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --ppl-only     # perplexi
 uv run lm/eval.py --model SupraLabs/Supra2-Medium-Base --probe        # example suggestions and tokenizations
 uv run lm/eval.py --model SupraLabs/Supra-50M-Base --simulate-q4      # weights rounded as GGUF Q4_0 (pessimistic Q4_K_M)
 python bench/eval.py --limit 2000 --no-save                           # the n-gram model at the same limit, for comparison
+uv run lm/eval.py --model data/lm/runs/cpt-150m --typos --limit 1000  # typo benchmark (KSR clean vs every word mistyped)
+uv run lm/eval.py --model data/lm/runs/cpt-150m --typo-weight 0 --ngram-weight 0   # decoder without typo repair / n-gram fusion
+uv run lm/eval.py --ngram --typos --limit 1000                        # typo benchmark of the n-gram model
+TYPELING_LM=data/release/Typeling-25M uv run tests/test_lm.py         # decoder tests (skipped by unittest discover without it)
+uv run lm/export.py --model data/lm/runs/cpt-150m --llama-cpp data/tools/llama.cpp   # release files in data/release/ (fp16 + Q8_0 GGUF + cards)
+./data/tools/llama-bin/llama-bench.exe -m data/release/Typeling-25M-GGUF/Typeling-25M-Q8_0.gguf -t 4   # llama.cpp b11953 (data/tools/, not tracked)
+uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" --index https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match python -m typeling --lm data/lm/runs/cpt-150m --device cpu --bench   # demo with the LM
 ```
 
 ## Conventions
 
 - The runtime package must stay dependency-free; numpy, pyarrow and huggingface_hub are used only by
-  `training/build.py` (uv inline script metadata).
+  `training/build.py` (uv inline script metadata). The one exception is `typeling/lm.py` (PyTorch, Transformers via
+  the extra `typeling[lm]`); nothing else in the package may import it.
+- Release names: Hugging Face `scarletkc/Typeling-25M` (fp16 safetensors, the default of `LMPredictor()` and
+  `--lm`) and `scarletkc/Typeling-25M-GGUF` (Q8_0); PyPI `typeling`. Publishing (Hugging Face uploads, making the
+  GitHub repository public, PyPI) only on the user's explicit go-ahead.
+- When launching several background runs from PowerShell, do not pass arguments containing spaces through
+  `Start-Process -ArgumentList` (it splits them); start each run as its own command.
 - Tokenizer rules live only in `typeling/text.py` and are shared by training and runtime; changing them requires
   rebuilding `en.bin`.
 - Any change to the model file format must update both the reader and the writer in `typeling/model.py` and bump

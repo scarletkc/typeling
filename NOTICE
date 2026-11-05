@@ -23,6 +23,11 @@ following attributions when redistributing or using the model:
   the Common Pile v0.1 (common-pile/ubuntu_irc_filtered), Kandpal et al. 2025
   https://huggingface.co/datasets/common-pile/ubuntu_irc_filtered
 
+The language model Typeling-25M (https://huggingface.co/scarletkc/Typeling-25M), used by
+typeling/lm.py and distributed separately, is licensed under the Apache License, Version 2.0. It
+is SupraLabs/Supra2-Medium-Base (Apache License 2.0,
+https://huggingface.co/SupraLabs/Supra2-Medium-Base) further trained on the datasets above.
+
 The words that the model never suggests by default are taken from the List of Dirty, Naughty,
 Obscene, and Otherwise Bad Words — CC BY 4.0
   https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words

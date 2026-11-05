@@ -11,20 +11,25 @@ save and how often the displayed suggestions are right.
 
 Simulation, per target word (every English word in the text, apostrophes included):
     "type" 0, 1, 2, ... letters and call topk(text before the cursor, 3) at each step.
-    When the top candidate is the target and its probability passes the display threshold,
+    Ghost text: when the top candidate is the target and its probability passes the display threshold,
     the user presses Tab to accept it (1 keystroke).
+    Candidate bar: the top 3 candidates are always shown; when the target is among them, the user picks it
+    (1 keystroke, a tap or a shortcut).
     Cost of a word = min(letters typed + 1, word length), or the word length if never accepted.
     Comparisons are case-insensitive.
 
 Metrics:
-    KSR        keystroke savings rate = 1 - keystrokes used / keystrokes to type everything (target-word letters only)
+    KSR        keystroke savings rate with ghost text = 1 - keystrokes used / keystrokes to type everything
+               (target-word letters only)
     Precision  share of displayed suggestions that were accepted (a wrong suggestion distracts the user once)
     Shown      average number of suggestions displayed per target word
+    KSR@3      keystroke savings rate with the candidate bar
     acc@i      share of target words whose top candidate is correct after i typed letters, regardless of
                thresholds; acc@0 is next-word prediction accuracy
-    top3@0     share of target words among the top 3 candidates with no letters typed
+    top3@i     share of target words among the top 3 candidates after i typed letters
     OOV        share of target words missing from the model vocabulary
-The "KSR (always shown)" column is the KSR with both thresholds at 0; latency is per topk() call (mean and p99).
+results.jsonl also stores acc@1..3 and "ksr_always", the ghost-text KSR with both thresholds at 0; latency is per
+topk() call (mean and p99).
 """
 
 import argparse
@@ -44,6 +49,7 @@ RESULTS = Path(__file__).resolve().parent / "results.jsonl"
 DOMAINS = {"chat": ("soda", "wildchat", "oasst2"), "casual": ("irc",), "writing": ("fineweb",)}
 ACC_LENS = (0, 1, 2, 3)
 GRID = (0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5)
+BAR = 3   # candidates in the candidate bar
 
 
 def load(source, split):
@@ -54,14 +60,20 @@ def load(source, split):
         return [normalize(json.loads(line)["text"]) for line in f]
 
 
+def rank_of(word, cands):
+    """Position of word (lowercase) among the candidates, case-insensitive, or BAR if not among the first BAR."""
+    return next((r for r, (c, _) in enumerate(cands[:BAR]) if c.lower() == word), BAR)
+
+
 def simulate(p, texts, limit, learn, vocab=None):
-    """Simulate typing word by word, recording (top candidate is correct, its probability) at every step;
-    thresholds are applied later in score(). vocab: the model's word vocabulary for the OOV rate
+    """Simulate typing word by word, recording (rank of the target among the candidates, top candidate's probability)
+    at every step; thresholds are applied later in score(). vocab: the model's word vocabulary for the OOV rate
     (None for subword models, which have no out-of-vocabulary words)."""
     words, events = [], []
     hit = dict.fromkeys(ACC_LENS, 0)
+    top3 = dict.fromkeys(ACC_LENS, 0)
     seen = dict.fromkeys(ACC_LENS, 0)
-    top3, oov, times = 0, 0, []
+    oov, times = 0, []
     for text in texts:
         for m in WORD_RE.finditer(text):
             w = m.group().lower()
@@ -70,18 +82,17 @@ def simulate(p, texts, limit, learn, vocab=None):
             ev = []
             for i in range(len(w)):
                 t0 = time.perf_counter()
-                cands = p.topk(before + m.group()[:i], 3)
+                cands = p.topk(before + m.group()[:i], BAR)
                 times.append(time.perf_counter() - t0)
-                ok = bool(cands) and cands[0][0].lower() == w
+                rank = rank_of(w, cands)
                 conf = cands[0][1] if cands else 0.0
                 if i in hit:
                     seen[i] += 1
-                    hit[i] += ok
-                    if i == 0:
-                        top3 += any(c.lower() == w for c, _ in cands)
-                ev.append((ok, conf))
-                if ok and conf >= GRID[-1] and i >= ACC_LENS[-1]:
-                    break  # accepted under every threshold from here on
+                    hit[i] += rank == 0
+                    top3[i] += rank < BAR
+                ev.append((rank, conf))
+                if rank == 0 and conf >= GRID[-1] and i >= ACC_LENS[-1]:
+                    break  # accepted under every threshold (and from the bar) from here on
             words.append(len(w))
             events.append(ev)
             if limit and len(words) >= limit:
@@ -94,7 +105,7 @@ def simulate(p, texts, limit, learn, vocab=None):
     stats = {
         "words": len(words),
         **{f"acc@{i}": hit[i] / max(1, seen[i]) for i in ACC_LENS},
-        "top3@0": top3 / max(1, len(words)),
+        **{f"top3@{i}": top3[i] / max(1, seen[i]) for i in ACC_LENS},
         "oov": oov / max(1, len(words)),
         "us_mean": sum(times) / max(1, len(times)) * 1e6,
         "us_p95": times[int(len(times) * 0.95)] * 1e6 if times else 0.0,
@@ -109,16 +120,43 @@ def score(words, events, t_next, t_complete):
     for n, ev in zip(words, events):
         full += n
         cost = n
-        for i, (ok, conf) in enumerate(ev):
+        for i, (rank, conf) in enumerate(ev):
             if conf < (t_next if i == 0 else t_complete):
                 continue
             shown += 1
-            if ok:
+            if rank == 0:
                 accepted += 1
                 cost = min(n, i + 1)
                 break
         used += cost
     return {"ksr": 1 - used / max(1, full), "precision": accepted / max(1, shown), "shown": shown / max(1, len(words))}
+
+
+def score_bar(words, events):
+    """KSR with the candidate bar: the target is picked at the first step where it is among the top BAR."""
+    full = used = 0
+    for n, ev in zip(words, events):
+        full += n
+        used += next((min(n, i + 1) for i, (rank, _) in enumerate(ev) if rank < BAR), n)
+    return 1 - used / max(1, full)
+
+
+def summarize(words, events, t_next, t_complete):
+    """score() at the display thresholds, plus "ksr_always" (thresholds 0) and "ksr_bar" (score_bar())."""
+    return {**score(words, events, t_next, t_complete), "ksr_always": score(words, events, 0, 0)["ksr"],
+            "ksr_bar": score_bar(words, events)}
+
+
+HEAD = "| Source | Words | KSR | Precision | Shown | KSR@3 | acc@0 | top3@0 | top3@1 | top3@2 | top3@3"
+
+
+def cells(source, n, s, st=None):
+    """Table cells under HEAD for summarize() result s and simulate() stats st (None: a pooled row, in bold)."""
+    b = "" if st else "**"
+    c = [f"{b}{source}{b}", f"{n:,}", f"{b}{s['ksr']:.2%}{b}", f"{s['precision']:.1%}", f"{s['shown']:.2f}",
+         f"{b}{s['ksr_bar']:.2%}{b}"]
+    c += [f"{st['acc@0']:.2%}", *(f"{st[f'top3@{i}']:.2%}" for i in ACC_LENS)] if st else [""] * (1 + len(ACC_LENS))
+    return "| " + " | ".join(c)
 
 
 def main():
@@ -150,9 +188,7 @@ def main():
     print(f"Model {args.model.name} ({args.model.stat().st_size / 1e6:.2f} MB, loaded in {load_ms:.0f} ms), "
           f"{split} split, thresholds: next word {t_next} / completion {t_complete}"
           + (", no context" if args.no_context else "") + (", simulated learning" if args.learn else ""))
-    print("| Source | Words | KSR | Precision | Shown | KSR (always shown) | acc@0 | acc@1 | acc@2 | acc@3 | top3@0 | OOV "
-          "| µs/query (p99) |")
-    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    print(HEAD + " | OOV | µs/query (p99) |\n" + "|---" * 13 + "|")
     pooled = {d: ([], []) for d in DOMAINS}
     rows = []
     for src in args.sources:
@@ -161,25 +197,22 @@ def main():
         d = next(k for k, v in DOMAINS.items() if src in v)
         pooled[d][0].extend(words)
         pooled[d][1].extend(events)
-        s, s0 = score(words, events, t_next, t_complete), score(words, events, 0, 0)
-        row = {"source": src, **st, **s, "ksr_always": s0["ksr"]}
-        rows.append(row)
-        print(f"| {src} | {st['words']:,} | {s['ksr']:.2%} | {s['precision']:.1%} | {s['shown']:.2f} | "
-              f"{s0['ksr']:.2%} | {st['acc@0']:.2%} | {st['acc@1']:.2%} | {st['acc@2']:.2%} | {st['acc@3']:.2%} | "
-              f"{st['top3@0']:.2%} | {st['oov']:.2%} | {st['us_mean']:.0f} ({st['us_p99']:.0f}) |", flush=True)
+        s = summarize(words, events, t_next, t_complete)
+        rows.append({"source": src, **st, **s})
+        print(cells(src, st["words"], s, st) + f" | {st['oov']:.2%} | {st['us_mean']:.0f} ({st['us_p99']:.0f}) |",
+              flush=True)
     for d, (words, events) in pooled.items():
         if words:
-            s, s0 = score(words, events, t_next, t_complete), score(words, events, 0, 0)
-            print(f"| **{d}** | {len(words):,} | **{s['ksr']:.2%}** | **{s['precision']:.1%}** | {s['shown']:.2f} | "
-                  f"{s0['ksr']:.2%} | | | | | | | |")
-            rows.append({"source": d, "words": len(words), **s, "ksr_always": s0["ksr"]})
+            s = summarize(words, events, t_next, t_complete)
+            print(cells(d, len(words), s) + " | | |")
+            rows.append({"source": d, "words": len(words), **s})
             if args.grid:
                 print(f"\n{d}: KSR / precision (rows: next-word threshold, columns: completion threshold)")
                 print("| | " + " | ".join(f"{t:g}" for t in GRID) + " |")
                 print("|---" * (len(GRID) + 1) + "|")
                 for tn in GRID:
-                    cells = [score(words, events, tn, tc) for tc in GRID]
-                    print(f"| {tn:g} | " + " | ".join(f"{c['ksr']:.1%} / {c['precision']:.0%}" for c in cells) + " |")
+                    row = [score(words, events, tn, tc) for tc in GRID]
+                    print(f"| {tn:g} | " + " | ".join(f"{c['ksr']:.1%} / {c['precision']:.0%}" for c in row) + " |")
                 print()
     if not args.no_save:
         with RESULTS.open("a", encoding="utf-8") as f:
