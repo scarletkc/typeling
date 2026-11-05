@@ -25,8 +25,9 @@ tags:
 
 A small English language model for typing prediction: it completes the word being typed and predicts the next word,
 for ghost text or a candidate bar in chat and everyday writing. 25.4M parameters, 50.8 MB at 16 bits (27.6 MB as Q8_0
-in [Typeling-25M-GGUF](https://huggingface.co/ScarletKc/Typeling-25M-GGUF)), about 25 ms per suggestion on a laptop
-CPU.
+in [Typeling-25M-GGUF](https://huggingface.co/ScarletKc/Typeling-25M-GGUF)). Through the PyTorch decoder it takes about
+25 ms per suggestion on a high-end laptop CPU and about 549 MB of memory; the word-level decoder does not run on the
+GGUF file yet.
 
 ## Quick start
 
@@ -46,8 +47,11 @@ p.topk("See you tomm", 3)           # [('tomorrow', 0.90), ('tommy', 0.07), ...]
 
 The model predicts tokens; the [Typeling decoder](https://github.com/scarletkc/typeling) turns them into word
 suggestions. It searches the words that fit the letters typed so far and gives each a probability, repairs typing
-errors (adjacent keys, extra or missing letters, swapped letters), mixes in a small n-gram model for rare words, and
-learns the user's own words locally. All results below are with this decoder.
+errors (adjacent keys, extra or missing letters, swapped letters), mixes in a small n-gram model that pushes non-words
+down the list, and learns the user's own words locally. All results below are with this decoder and the 16-bit weights.
+
+The model is downloaded once and typed text never leaves the machine, but loading it still asks Hugging Face for the
+latest revision unless `HF_HUB_OFFLINE=1` is set ([issue #1](https://github.com/scarletkc/typeling/issues/1)).
 
 ### With Transformers only
 
@@ -75,8 +79,9 @@ types 0, 1, 2, ... letters and accepts the suggestion with one keystroke as soon
 
 - **KSR** (keystroke savings rate) with ghost text: the top suggestion is shown when its probability is at least 0.3
   and it extends the typed letters.
-- **KSR@3** with a candidate bar: the top 3 candidates are always shown.
-- 2,000 words per source. Chat is SODA, WildChat and oasst2, casual is Ubuntu IRC, writing is FineWeb.
+- **KSR@3** with a candidate bar: the top 3 candidates are always shown, and picking one counts as one keystroke.
+- The first 2,000 words per source (for FineWeb, three documents). Chat is SODA, WildChat and oasst2, casual is Ubuntu
+  IRC, writing is FineWeb.
 
 | | n-gram, 5 MB | n-gram, 23 MB | **Typeling-25M** |
 |---|---|---|---|
@@ -86,7 +91,9 @@ types 0, 1, 2, ... letters and accepts the suggestion with one keystroke as soon
 | Chat: precision of ghost text | 51.0% | 51.2% | **54.7%** |
 
 The n-gram models are Typeling's pure-Python kernel (an interpolated Kneser-Ney trigram model built from the same
-corpus; 23 MB is the unpruned model).
+corpus; 23 MB is the unpruned model). It is not the strongest possible n-gram model (no higher orders, larger
+vocabularies or lower count cutoffs were tried), and the language model also has the base model's 20B tokens of
+pretraining behind it.
 
 Next word, before any letter is typed: the right word on top / among the top 3.
 
@@ -99,8 +106,9 @@ Next word, before any letter is typed: the right word on top / among the top 3.
 | FineWeb | 15.0% / 27.1% | 24.8% / 37.7% |
 
 Typing errors: the same simulation with every word of 3+ letters mistyped (one error, two in one word out of five;
-1,000 words per source). KSR@3 typed correctly -> with errors, and the share of mistyped words whose intended word
-is picked from the candidate bar. Corrections appear only in the bar: ghost text extends what was typed.
+the first 1,000 words per source, for FineWeb one document). KSR@3 typed correctly -> with errors, and the share of
+mistyped words whose intended word is picked from the candidate bar at any step. Corrections appear only in the bar:
+ghost text extends what was typed.
 
 | | n-gram, 5 MB | Typeling-25M |
 |---|---|---|
@@ -109,14 +117,18 @@ is picked from the candidate bar. Corrections appear only in the bar: ghost text
 | Writing | 42.3% -> 32.0% (62.9%) | 50.8% -> 45.5% (90.5%) |
 
 The errors come from the same keyboard model that the repair undoes, and earlier words are never mistyped, so these
-numbers are optimistic. The n-gram kernel does not repair typos, and the bar was not measured without repair, so the
-table compares two systems rather than isolating repair.
+numbers are optimistic. The share also counts words picked before the error is typed. The n-gram kernel does not
+repair typos, and the bar was not measured without repair, so the table compares two systems rather than isolating
+repair.
 
 Perplexity per word on the test splits: SODA 17.7, WildChat 180, oasst2 107, Ubuntu IRC 323, FineWeb 175.
 
-Speed on a laptop CPU (AMD Ryzen 9 9955HX, 4 threads, PyTorch, float32), per suggestion, mean (p95 / p99): 23–25 ms
-(39–48 / 51–60 ms) on chat, 33 ms (63 / 82 ms) on long web text. llama.cpp runs the Q8_0 file at about 12,000
-tokens/s for prompts and 2,800 tokens/s for single-token steps on the same 4 threads.
+Speed on a high-end laptop CPU (AMD Ryzen 9 9955HX, 4 threads, PyTorch, float32), per suggestion over 300 words per
+source, mean (p95 / p99): 23–25 ms (39–48 / 51–60 ms) on chat and IRC, 33 ms (63 / 82 ms) on long web text (one
+document). Resident memory is 549 MB. Startup is 4.6 s to import PyTorch plus 2.5 s to load the cached model with
+`HF_HUB_OFFLINE=1`, or 9.3 to 12.6 s with the default revision check. llama.cpp runs the Q8_0 file at about 12,000
+tokens/s for prompts and 2,800 tokens/s for single-token steps on the same 4 threads, but no word-level decoder runs on
+it yet, so it has not been through this benchmark.
 
 ## Training
 
@@ -130,9 +142,10 @@ tokens/s for prompts and 2,800 tokens/s for single-token steps on the same 4 thr
   - `</s>` separates texts; its embedding was initialized from the newline token's before training.
   - In 1% of words, `" word"` was re-tokenized as `" "` + `"word"`, so the model also continues text that ends in a
     space.
-- **Data:** chat and writing, each corpus cleaned of emails, URLs and phone numbers; chat sources keep only turns that
-  look typed by a person. About 1% of FineWeb, WildChat and IRC is held out for development and 1% for testing;
-  SODA and oasst2 keep their official splits.
+- **Data:** chat and writing. FineWeb has emails, URLs and phone numbers removed; WildChat, oasst2 and IRC keep only
+  turns that look typed by a person and contain none of them, and WildChat also drops turns flagged as toxic or
+  redacted; SODA, which is generated, is used as released. About 1% of FineWeb, WildChat and IRC is held out for
+  development and 1% for testing; SODA and oasst2 keep their official splits.
 
 | Corpus | License | Words | Share of training |
 |---|---|---|---|
@@ -158,9 +171,15 @@ experiment.
 - SODA was generated by InstructGPT, and OpenAI's terms restrict using its outputs to build competing models.
 - The base model was trained on FineWeb-Edu, which is filtered from FineWeb, so writing-domain results may be
   slightly optimistic.
-- Typo results come from simulated keyboard errors, not from recorded human typing.
+- Typing and typo results are simulated, with no user study; the errors do not come from recorded human typing. The
+  benchmark cannot show whether learning the user's words helps, because its texts come from many different people.
+- Each result uses the first 1,000 to 2,000 words of a split, with no confidence intervals or repeated samples. System
+  comparisons are on the same words, but absolute numbers depend on the sample: the 23 MB n-gram scores 28.9% KSR on
+  WildChat's development sample and 34.8% on its test sample.
 - The model can suggest offensive words or reproduce biases from web and chat text. The Typeling decoder does not
-  suggest words from a blocklist, nor common misspellings.
+  suggest words from a blocklist, nor common misspellings, but other harmful completions are possible. The model was
+  not tested for verbatim reproduction of training text or personal information.
+- The candidate bar can still offer non-words right after a finished word (`muchfor`).
 - Without the Typeling decoder you get raw next-token predictions, with no word-level probabilities, typo repair or
   filtering.
 

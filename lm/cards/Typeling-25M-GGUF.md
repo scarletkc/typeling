@@ -26,7 +26,7 @@ prediction, as a GGUF file for [llama.cpp](https://github.com/ggml-org/llama.cpp
 
 Measured with `llama-perplexity --kl-divergence` on 380k characters of held-out chat and web text (190 chunks of 512
 tokens), against an F16 conversion of the same weights. There is no 4-bit file: at this size Q4 would save about 10
-MB and small models lose more to 4-bit quantization. You can make one from the
+MB, and what it would cost this model was not measured. You can make one from the
 [16-bit weights](https://huggingface.co/ScarletKc/Typeling-25M) with llama.cpp's `convert_hf_to_gguf.py` and
 `llama-quantize`.
 
@@ -39,7 +39,8 @@ The model predicts tokens, not words. The word-level suggestions, typo repair an
 [main model card](https://huggingface.co/ScarletKc/Typeling-25M) come from the Typeling decoder
 ([`typeling/lm.py`](https://github.com/scarletkc/typeling/blob/master/typeling/lm.py), `pip install "typeling[lm]"`),
 which runs the 16-bit weights with PyTorch. With llama.cpp you get raw next-token predictions; the decoder is the
-reference for building word suggestions on top of them.
+reference for building word suggestions on top of them. This file has not been through the word-level benchmark, and
+porting the decoder to llama.cpp is [issue #2](https://github.com/scarletkc/typeling/issues/2).
 
 ## Input format
 
