@@ -11,8 +11,9 @@
 # torch = { index = "pytorch-cu128" }
 # ///
 """
-Renders the terminal demo (typeling --lm with a bar of 3 candidates) as an animated GIF and stills for the blog post.
-Every frame shows what typeling.demo.LineEditor displays after that key, from the real suggestions of Typeling-25M.
+Renders the terminal demo (typeling --lm --candidates 3) as an animated GIF and stills for the blog post. Every frame
+shows the line and candidates typeling.demo.LineEditor displays after that key, from the real suggestions of
+Typeling-25M; the window, the header and the labels are drawn here.
 
     uv run docs/blog/make_demo.py                                  # data/release/Typeling-25M if present, else the Hub
     uv run docs/blog/make_demo.py --model ScarletKc/Typeling-25M
@@ -63,8 +64,8 @@ def frame(text, ghost, cands, tab=False):
     d.rectangle([0, 0, W, 44], fill=DARK_PANEL)
     for i, c in enumerate(("#FF5F56", "#FFBD2E", "#27C93F")):
         d.ellipse([20 + i * 26, 15, 34 + i * 26, 29], fill=c)
-    d.text((W / 2, 22), "typeling --lm", font=SANS_SMALL, fill=DARK_MUTED, anchor="mm")
-    d.text((PAD, 74), "Typeling-25M  ·  Tab accept  ·  ↑/↓ choose  ·  runs offline", font=SANS_SMALL, fill=DARK_MUTED)
+    d.text((W / 2, 22), "typeling --lm --candidates 3", font=SANS_SMALL, fill=DARK_MUTED, anchor="mm")
+    d.text((PAD, 74), "Typeling-25M  ·  Tab accept  ·  ↑/↓ choose  ·  runs locally", font=SANS_SMALL, fill=DARK_MUTED)
     y = 150
     x = PAD
     d.text((x, y), "> ", font=MONO, fill=DARK_MUTED, anchor="ls")

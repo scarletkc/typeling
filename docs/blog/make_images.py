@@ -26,10 +26,11 @@ KSR3 = {"n-gram, 5 MB": [48.8, 38.9, 40.6], "n-gram, 23 MB": [50.6, 40.4, 41.5],
 COLORS = [NGRAM_SMALL, NGRAM, ACCENT]
 # Dev split, 2,000 words per source, early decoder (sections 12 and 13)
 STAGES = ["n-gram\n(23 MB)", "Base model,\nzero-shot", "+20M tokens\n(5.6 min)", "+150M tokens\n(58 min)"]
-GAIN = {"Chat": [31.9, 33.5, 40.3, 41.2], "Casual (IRC)": [24.8, 22.8, 27.7, 29.6]}
-# "Let me know " (section 12: Supra2-Medium-Base raw next token; technical report appendix B: Typeling-25M decoder)
+GAIN = {"Chat": [31.9, 33.5, 40.3, 41.2], "Casual (IRC)": [24.8, 22.8, 27.7, 29.6],
+        "Writing (FineWeb)": [25.5, 38.6, 37.5, 37.2]}
+# "Let me know " (section 12: Supra2-Medium-Base, raw next token and through the decoder)
 RAW = [('"!"', 0.37), ("invalid byte", 0.19), ('"!!"', 0.08)]
-DECODED = [("if", 0.73), ("how", 0.12), ("what", 0.06)]
+DECODED = [("if", 0.48), ("what", 0.11), ("how", 0.07)]
 
 
 def setup_matplotlib():
@@ -75,15 +76,16 @@ def results():
 
 
 def gain():
-    fig, ax = plt.subplots(figsize=(9, 4.6))
-    bars(ax, STAGES, GAIN, [ACCENT, "#B49CFF"])
-    ax.set_ylim(0, 56)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    bars(ax, STAGES, GAIN, [ACCENT, "#B49CFF", NGRAM])
+    ax.set_ylim(0, 62)
     ax.set_ylabel("Keystrokes saved, ghost text (%)")
     ax.set_title("Where the gain over the n-gram model comes from", loc="left")
-    ax.legend(frameon=False, loc="upper left", fontsize=11)
-    ax.annotate("", xy=(3 - 0.2, 47.5), xytext=(1 - 0.2, 47.5),
+    ax.legend(frameon=False, loc="upper left", ncol=3, fontsize=11)
+    chat = -0.8 / 3   # offset of the chat bar in each group
+    ax.annotate("", xy=(3 + chat, 47.5), xytext=(1 + chat, 47.5),
                 arrowprops={"arrowstyle": "->", "color": ACCENT, "lw": 1.6})
-    ax.text(2 - 0.2, 48.6, "+7.7 points on chat from continued pretraining", ha="center", va="bottom",
+    ax.text(2 + chat, 48.6, "+7.7 points on chat from continued pretraining", ha="center", va="bottom",
             color=ACCENT, fontsize=11, fontweight="bold")
     fig.text(0.01, -0.06, "Development split, 2,000 words per source, through the same early decoder "
              "(no typo repair or n-gram fusion).", color=MUTED, fontsize=10.5)
@@ -93,8 +95,8 @@ def gain():
 
 def trailing_space():
     fig, axes = plt.subplots(1, 2, figsize=(12, 3.4), gridspec_kw={"wspace": 0.5})
-    panels = ((RAW, NGRAM, "Raw model, next token after “Let me know ”"),
-              (DECODED, ACCENT, "Typeling decoder, next word"))
+    panels = ((RAW, NGRAM, "Raw next token after “Let me know ”"),
+              (DECODED, ACCENT, "Same model, word decoder: next word"))
     for ax, (items, color, title) in zip(axes, panels):
         labels, values = [k for k, _ in items][::-1], [v for _, v in items][::-1]
         ax.barh(labels, values, color=color, height=0.6)
@@ -105,9 +107,9 @@ def trailing_space():
         ax.spines["bottom"].set_visible(False)
         ax.tick_params(axis="y", length=0, labelsize=13, labelcolor=INK)
         ax.set_title(title, loc="left")
-    fig.text(0.01, -0.08, "Left: Supra2-Medium-Base before any training; byte-level BPE attaches the space to the next "
-             "word, so text ending in a space looks unusual.\nRight: Typeling-25M through the word decoder, which "
-             "cuts the space off and constrains the next token to start with it.", color=MUTED, fontsize=10.5)
+    fig.text(0.01, -0.08, "Both: Supra2-Medium-Base before any training. Left: byte-level BPE attaches the space to the "
+             "next word, so text ending in a space looks unusual.\nRight: the word decoder cuts the space off and "
+             "constrains the next token to start with it.", color=MUTED, fontsize=10.5)
     fig.savefig(IMAGES / "trailing-space.png")
     plt.close(fig)
 
@@ -150,8 +152,8 @@ def cover():
             d.rounded_rectangle([x - 12, 520, x + w + 12, 576], radius=8, fill=DARK_TEXT)
         d.text((x, 548), t, font=bar, fill=DARK_BG if i == 0 else DARK_MUTED, anchor="lm")
         x += w + 48
-    d.text((W / 2, 668), "43% of keystrokes saved on chat (n-gram: 34%)  ·  27.6 MB  ·  trained in 58 minutes on a "
-           "laptop", font=font("sans", 34), fill="#B49CFF", anchor="mm")
+    d.text((W / 2, 668), "43% of keystrokes saved on chat (23 MB n-gram: 34%)  ·  adapted in 58 minutes on a laptop",
+           font=font("sans", 34), fill="#B49CFF", anchor="mm")
     im.save(IMAGES / "cover.png")
 
 
@@ -202,7 +204,8 @@ def decoder():
     y = 300
     d.text((80, y), "1  Prefix phase: only tokens that agree with \" kn\"", font=head, fill=INK, anchor="lm")
     x = 120
-    for t, ok in (('" k"', True), ('" kn"', True), ('" know"', True), ('" ka"', False), ('"!"', False)):
+    for t, ok in (('" k"', True), ('" kn"', True), ('" know"', True), ('" knock"', True), ('" ka"', False),
+                  ('"!"', False)):
         x = chip(d, x, y + 80, t, tok, "#F1EDFF" if ok else "#FFF1F0", ACCENT if ok else "#CF222E",
                  strike=not ok) + 20
     d.text((x + 10, y + 80), "allowed / rejected", font=body, fill=MUTED, anchor="lm")
@@ -210,7 +213,7 @@ def decoder():
     y = 500
     d.text((80, y), "2  Word phase: add letter tokens until the model ends the word", font=head, fill=INK,
            anchor="lm")
-    for row, (pieces, word) in enumerate(((['" know"'], "know"), (['" know"', '"ing"'], "knowing"),
+    for row, (pieces, word) in enumerate(((['" know"'], "know"), (['" knock"', '"ing"'], "knocking"),
                                           (['" know"', "\"'s\""], "know's"))):
         yy = y + 80 + row * 78
         x = 120
