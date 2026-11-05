@@ -85,7 +85,7 @@ About 47M words, roughly 65M tokens with the base tokenizer (1.29–1.44 tokens 
 document is one segment, separated by the end-of-text token `</s>`. The base model never saw `</s>` or `<s>`
 (section 12); `</s>` is therefore initialized from the newline token before training (section 4).
 
-WildChat's dev split is about 24% smaller than its test split (2,927 vs 3,805 turns; train 377,589; about 3,840 each
+WildChat's dev split is about 23% smaller than its test split (2,927 vs 3,805 turns; train 377,589; about 3,840 each
 expected from the 1% content-hash split). IRC (4,277 / 4,142), FineWeb (401 / 434) and the official SODA and oasst2
 splits look normal. The deficit is spread evenly over the ten dev hash buckets (272–314 turns each, test 349–410), and
 dev and test have the same share of turns with 13+ words (51.0% vs 51.5%) and of turns sharing a 13-gram with the

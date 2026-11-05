@@ -17,8 +17,9 @@ experiment.
 
 ## Features
 
-- **Offline and private.** No network access at runtime (the language model is downloaded once); what the user types
-  never leaves the machine.
+- **Offline and private.** Predictions run on your machine, and what the user types never leaves it. The n-gram kernel
+  needs no network. The language model is downloaded once; loading it still asks Hugging Face for the latest revision
+  unless `HF_HUB_OFFLINE=1` is set ([issue #1](https://github.com/scarletkc/typeling/issues/1)).
 - **Pure Python, no dependencies.** The n-gram kernel uses only the standard library (Python 3.13+).
 - **Small and fast.** The bundled n-gram model is at most 5 MB, loads in milliseconds and answers a keystroke in tens
   of microseconds; the language model answers in tens of milliseconds on a laptop CPU.
