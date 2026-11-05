@@ -39,6 +39,11 @@ uv run --no-project --python 3.13 paper/version.py && cd paper && ../data/tools/
 uv run docs/blog/make_images.py                                       # blog post cover, diagrams and charts -> docs/blog/images/
 uv run docs/blog/make_demo.py                                         # blog post demo GIF and stills from real Typeling-25M suggestions (CPU)
 uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" --index https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match python -m typeling --lm data/lm/runs/cpt-150m --device cpu --bench   # demo with the LM
+
+# Windows input method prototype (app/windows/README.md); Rust with the MSVC toolchain
+cargo test --manifest-path app/windows/tip/Cargo.toml                 # unit tests and a TSF typing session against the real engine; installs nothing
+cargo build --release --manifest-path app/windows/tip/Cargo.toml      # text service DLL
+python app/windows/engine.py                                          # engine process the DLL talks to
 ```
 
 ## Conventions
@@ -73,5 +78,8 @@ uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" -
   `--no-project`, uv creates a `.venv` in the repository and installs the package into it.
 - The Supra2-Medium tokenizer adds a space before every text (`add_prefix_space`), so "\n" alone encodes as two tokens
   and the first word of a text is " word"; look up the newline token as "Ċ" (`convert_tokens_to_ids("\u010a")`).
+- The text service DLL (`app/windows/tip`) runs inside other people's applications: a panic must not cross a COM
+  boundary (`guard` in `src/lib.rs`), RefCell borrows must not span a call into TSF, and it must never block the UI
+  thread. Registering it (`app/windows/install.ps1`) changes the machine, so only the user runs that.
 - Git Bash rewrites arguments that look like paths (`--start "</s>"` becomes a Windows path); pass such arguments from
   PowerShell or set `MSYS_NO_PATHCONV=1`.

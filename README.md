@@ -253,6 +253,7 @@ bench/eval.py          typing-simulation benchmark
 tests/                 unit tests (python -m unittest discover tests)
 lm/                    Typeling-25M: data, training, typo experiments and benchmark (PyTorch, uv scripts)
 docs/model-plan.md     plan and results for Typeling-25M
+app/windows/           prototype Windows input method: TSF text service (Rust) and engine process (see its README)
 ```
 
 ## License

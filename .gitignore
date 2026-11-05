@@ -7,3 +7,4 @@ build/
 *.egg-info/
 paper/*.pdf
 paper/version.tex
+app/windows/tip/target/
