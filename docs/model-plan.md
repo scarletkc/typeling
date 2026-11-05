@@ -29,7 +29,7 @@ Decisions so far:
 | Data licenses | permissive only (public domain, CC BY, ODC-By, Apache-2.0); no NC or share-alike data |
 | Weights license | Apache-2.0 (the base model's license), with a NOTICE that carries the base model and dataset attributions |
 | Typos | repaired in the decoder (keyboard error model, candidates scored by the model); the model is not fine-tuned on typos: a 40M-token typo fine-tuning experiment was worse than decoder repair on both clean and mistyped input (section 14) |
-| Candidates | the top 3 are the accuracy target (KSR@3, top3@i); the decoder's search is exact for the top 3, further candidates are best effort |
+| Candidates | the top 3 are the accuracy target (KSR@3, top3@i); the decoder's search runs until no hypothesis in the beam can overtake the third candidate (not exact: pruned paths are not revisited), further candidates are best effort |
 | Hardware | the local RTX 5070 Ti laptop GPU (12 GB); rent a GPU only if a full training run would take more than a few hours |
 
 ## 2. Base model
@@ -39,7 +39,7 @@ our benchmark are in section 12):
 
 | Model | Released | Parameters | Architecture | License | Pretraining data | Verdict |
 |---|---|---|---|---|---|---|
-| SupraLabs/Supra2-Medium-Base | 2026-08 | 25.4M | `Qwen3ForCausalLM` | Apache-2.0 | FineWeb-Edu, 20B tokens | **chosen**: half the compute and file size of Supra-50M for 1–2 points of KSR |
+| SupraLabs/Supra2-Medium-Base | 2026-08 | 25.4M | `Qwen3ForCausalLM` | Apache-2.0 | FineWeb-Edu, 20B tokens | **chosen**: half the parameters of Supra-50M for 1.3–3.5 points of zero-shot KSR |
 | SupraLabs/Supra-50M-Base | 2026-05 | 51.8M | `LlamaForCausalLM` | Apache-2.0 | FineWeb-Edu, 20B tokens | fallback: best zero-shot accuracy among the candidates within the size budget |
 | SupraLabs/Supra2-100M-Base | 2026-07 | 100.7M | `Qwen3ForCausalLM` | Apache-2.0 | FineWeb-Edu and DCLM, 30B tokens | too large (Q4_K_M about 60–65 MB, estimate) |
 | SupraLabs/Supra1.5-50M-Base-exp | 2026-06 | 51.8M | `LlamaForCausalLM` | Apache-2.0 | Supra-50M plus 3B tokens, 60% tool calls and ChatML chats | pushed toward assistant formats |
@@ -61,6 +61,11 @@ Supra2-Medium fits at Q8_0 (nearly lossless). Published keyboard work points the
 Qwen2.5-1.5B against 0.5B for next-word prediction and got 19.0% -> 20.1% top-1 and 39.0% -> 39.4% top-5 for about
 2.4x the decoding cost (lexokeyboard.app, "Fitting a language model inside an Android keyboard", 2026). If Typeling
 misses the success criteria after milestone 3, the same pipeline is rerun on Supra-50M.
+
+The size argument is weaker than it looks: GGUF Q4_0 stores about 4.5 bits per weight and Q8_0 about 8.5, so a 4-bit
+Supra-50M would be about 30 MB (estimate from the parameter count), close to Supra2-Medium at Q8_0 (27.55 MB,
+section 14), and Dettmers & Zettlemoyer (2023) find 4 bits with more parameters usually the better trade-off at a
+fixed size. The two models were compared only zero-shot, and their speed was not measured.
 
 File sizes are estimates from the parameter count until milestone 3 measures them: f16 about 51 MB, Q8_0 about 27 MB.
 
@@ -153,16 +158,17 @@ mode for typo-fine-tuned models.
   constraints in the same beam, each weighted by the error probability (`typo_weight`, 0.003 relative to no error).
   Completion and correction (tomm -> tomorrow, thnik -> think) use one search, and the number of model calls barely
   changes. Corrections appear in `topk()` and the candidate bar; ghost text shows only extensions.
-- Candidates: the search stops once no unexplored path can beat the third-best word, so the top 3 are exact; more
-  candidates are the other words the search reached.
+- Candidates: the search stops once no hypothesis left in the beam can beat the third-best word; more candidates are
+  the other words the search reached. The top 3 are not exact: paths pruned from the beam are not revisited (beam 6
+  and 8 differ), and hidden words, the user model and n-gram fusion are applied after the search.
 - User model: the kernel's user model (words and word pairs the user typed) is mixed into the joint probabilities
   before normalizing over the words that fit the typed letters, with the kernel's weight schedule (up to 0.3), so a
   name the language model barely knows wins after a few uses while common words stay with the language model.
 - Context: the last 1,000 characters (section 14).
-- N-gram fusion (`ngram_weight`): the final probability mixes in the bundled n-gram model's. The language model's
-  short search misses rare long words (encyc -> encyclopedia) and its subword pieces can form non-words (don't +
-  know -> "don'tknow", "much" + "for" -> "muchfor"); the n-gram model's vocabulary fixes both. Known misspellings
-  from the n-gram model (recieve) are never suggested.
+- N-gram fusion (`ngram_weight`): the final probability mixes in the bundled n-gram model's, so fusion adds at most
+  `ngram_weight` to any word. The language model's subword pieces can form non-words (don't + know -> "don'tknow",
+  "much" + "for" -> "muchfor"); fusion adds mass to the n-gram model's real words and pushes such non-words down the
+  list. Known misspellings from the n-gram model (recieve) are never suggested.
 - The context's key/value cache is reused across keystrokes.
 - Latency target per suggestion with the main GGUF file on a laptop CPU (normal power mode; power-saving mode is
   reported as the worst case): p95 at most 50 ms, p99 at most 100 ms. 100 ms is about the limit of what feels
@@ -221,7 +227,7 @@ kept in git history).
 
 - **Base model maturity.** Supra2-Medium-Base comes from a small lab, is labeled an efficiency experiment, has few
   downloads and unverified benchmark claims; milestone 0 checked it on our benchmark.
-- **Capacity.** It is 1–2 KSR points behind Supra-50M zero-shot; continued pretraining has to open a 3-point lead over
+- **Capacity.** It is 1.3–3.5 KSR points behind Supra-50M zero-shot; continued pretraining has to open a 3-point lead over
   the unpruned n-gram model on chat. Fallback: Supra-50M.
 - **Domain shift.** The base model saw only educational web text; continued pretraining has to move it toward chat
   and informal typing, and the corpus is small.
@@ -235,7 +241,7 @@ kept in git history).
 - **Subword decoding** adds latency and complexity compared with the n-gram's word-level scoring; the latency target
   is the check, and a word-scoring head (section 6) the fallback.
 - **Memorization and PII**: the corpus is already scrubbed of emails, URLs and phone numbers; test for verbatim
-  reproduction of training text before release.
+  reproduction of training text before release. Not done for v1; the technical report says so.
 
 ## 11. Repository layout
 
@@ -406,7 +412,8 @@ Per-word perplexity: SODA 19.1, WildChat 156, oasst2 115, IRC 312, FineWeb 176.
 - Against the pilot, the 7.5x longer run adds 0.9 KSR points on chat and 1.9 on casual text (WildChat +1.8, IRC
   +1.9); oasst2 loses 1.1 points after its weight was cut, writing is flat. Returns are diminishing on this corpus;
   more data (section 3) is the likelier next gain than more epochs.
-- With 2,000 words per source, differences of about a point are within sampling noise.
+- With 2,000 words per source, differences of about a point are within sampling noise (an estimate, not measured:
+  samples of this size can differ by several points, section 15).
 
 **CPU latency, upper bound.** The full-run model through the real decoder in PyTorch (float32, eager) on the laptop
 CPU with 4 threads, 300 words per source (`lm/eval.py --device cpu --threads 4 --no-ppl --limit 300`), per query
@@ -443,7 +450,13 @@ typing of the same words. Ghost-text KSR, clean -> with typos (share of mistyped
 - What repair cannot reach: words with two errors (one in five mistyped words here), and errors whose correction is
   not a prefix of a vocabulary word.
 - At a realistic share r of mistyped words, KSR is about (1 - r) x clean + r x with typos: at r = 10%, 40.67% with
-  repair against 40.46% without on chat. The visible gain is in corrections, not in raw keystrokes.
+  repair against 40.46% without on chat (+0.21 points; casual -0.15, writing +0.25). The visible gain is in
+  corrections, not in raw keystrokes.
+- The benchmark is optimistic: the errors use `typeling.keyboard`'s layout and error types, the ones the repair
+  inverts; context words are never mistyped; Correct also counts words accepted before the error (hence 48–62%
+  without repair); and `score()` counts the top candidate as accepted ghost text even when it is a correction that
+  does not extend the typed letters, which `suggest()` never shows. With typos, ghost-text KSR and Correct are
+  therefore upper bounds for `suggest()`; KSR@3 and Correct@3 match `topk()`.
 
 **Typo fine-tuning experiment.** `uv run lm/typos.py --model data/lm/runs/cpt-150m --out data/lm/tokens/typo` (600k
 examples, 47% with errors), then 40M tokens from cpt-150m (1,221 steps, lr 3e-4, half typo examples with the loss on
@@ -467,8 +480,9 @@ of 3 candidates), clean / with typos, and the precision of ghost text with typos
 - A bar of 3 candidates saves 15–17 points more than ghost text alone (KSR@3 56.8% on chat), and the intended word
   is among the top 3 for 87–94% of mistyped words at some point while typing them (Correct@3).
 - N-gram fusion at 0.1 adds 0.2–0.3 points of KSR@3 and 1–2 points of precision, at most 0.4 points of ghost-text
-  KSR; higher weights cost more. The visible gain is outside the metric: rare words the search misses
-  (encyc -> encyclopedia, 0.93 with fusion, absent without) and fewer non-words among candidates 4–5.
+  KSR; higher weights cost more. The visible gain is outside the metric: fewer non-words among candidates 4–5.
+  (An earlier version of this note said that encyc -> encyclopedia, 0.93 with fusion, was absent without it. That
+  cannot be: at weight 0.1, fusion adds at most 0.1, so the language model alone gives encyclopedia at least 0.92.)
 - Lowering the weight of typed letters that start no vocabulary word to 0.1 changes nothing on clean input and
   adds 0.1–0.3 points with typos; "I will recie" now ranks receive first (the model had learned "recieve").
 - Defaults: typo weight 0.003, unknown weight 0.1, n-gram weight 0.1.
@@ -539,3 +553,10 @@ Typos (every word of 3+ letters mistyped), KSR clean -> with typos (Correct), gh
 - Dev and test agree within about a point per domain, except WildChat (dev KSR 37.15% at 1,000 words, test 42.16%
   at 2,000), where the test sample happens to be easier for both models (the 23 MB n-gram model goes from 28.9% on
   dev to 34.8% on test).
+- `--limit` takes the first N words of each split, so the writing samples cover few documents: FineWeb's first
+  2,000 test words come from three documents, the first 1,000 (typos) from one, and the 300-word dev latency sample
+  from one. No confidence intervals, paired bootstrap or repeated runs on other samples.
+- **Footprint** (typeling 0.1.0 installed from PyPI, CPU PyTorch, the same laptop): `import torch` 4.6 s;
+  `LMPredictor()` 2.5 s from the Hugging Face cache offline, 9.3 s and 12.6 s in two runs with Hugging Face's online
+  revision check (issue #1); resident memory 549 MB after loading. The n-gram kernel: `Predictor()` 0.03 s, 54 MB.
+  llama.cpp's CPU binaries (b11953, all DLLs and one executable) take 50 MB on disk.
