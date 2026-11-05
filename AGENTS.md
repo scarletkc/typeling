@@ -46,6 +46,9 @@ uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" -
 - Release names: Hugging Face `ScarletKc/Typeling-25M` (fp16 safetensors, the default of `LMPredictor()` and
   `--lm`) and `ScarletKc/Typeling-25M-GGUF` (Q8_0); PyPI `typeling`. Publishing (Hugging Face uploads, making the
   GitHub repository public, PyPI) only on the user's explicit go-ahead.
+- PyPI releases: bump `version` in `pyproject.toml`, push, then publish a GitHub release tagged `v<version>`;
+  `.github/workflows/publish.yml` tests, builds and uploads with trusted publishing (environment `pypi`). A version
+  number cannot be uploaded twice. Hugging Face repo ids are case-sensitive in the model tree: use `ScarletKc/...`.
 - When launching several background runs from PowerShell, do not pass arguments containing spaces through
   `Start-Process -ArgumentList` (it splits them); start each run as its own command.
 - Tokenizer rules live only in `typeling/text.py` and are shared by training and runtime; changing them requires
