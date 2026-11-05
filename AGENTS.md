@@ -36,6 +36,8 @@ TYPELING_LM=data/release/Typeling-25M uv run tests/test_lm.py         # decoder 
 uv run lm/export.py --model data/lm/runs/cpt-150m --llama-cpp data/tools/llama.cpp   # release files in data/release/ (fp16 + Q8_0 GGUF + cards)
 ./data/tools/llama-bin/llama-bench.exe -m data/release/Typeling-25M-GGUF/Typeling-25M-Q8_0.gguf -t 4   # llama.cpp b11953 (data/tools/, not tracked)
 uv run --no-project --python 3.13 paper/version.py && cd paper && ../data/tools/tectonic/tectonic.exe typeling.tex   # technical report (ACL style, version from pyproject.toml) -> paper/typeling.pdf (not tracked)
+uv run docs/blog/make_images.py                                       # blog post cover, diagrams and charts -> docs/blog/images/
+uv run docs/blog/make_demo.py                                         # blog post demo GIF and stills from real Typeling-25M suggestions (CPU)
 uv run --no-project --python 3.13 --with "transformers>=5" --with "torch>=2.7" --index https://download.pytorch.org/whl/cu128 --index-strategy unsafe-best-match python -m typeling --lm data/lm/runs/cpt-150m --device cpu --bench   # demo with the LM
 ```
 
