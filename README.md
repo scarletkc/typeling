@@ -9,8 +9,11 @@ The `typeling` package has two predictors with the same interface:
   a 25M-parameter transformer language model trained for typing, with typo repair (optional extra
   `typeling[lm]`: PyTorch and Transformers).
 
-Training and evaluation of the language model are in `lm/`; see [docs/model-plan.md](docs/model-plan.md) for the plan,
-the experiments and their results.
+Training and evaluation of the language model are in `lm/`. The
+[technical report](https://github.com/scarletkc/typeling/releases/download/v0.1.1/typeling-technical-report.pdf)
+(PDF) describes the model, the decoder and the results;
+[docs/model-plan.md](https://github.com/scarletkc/typeling/blob/master/docs/model-plan.md) records the plan and every
+experiment.
 
 ## Features
 
@@ -170,7 +173,8 @@ With every word of 3+ letters mistyped, chat KSR@3 drops from 49.6% to 40.5% wit
 to 55.7% with Typeling-25M, which repairs the errors among its candidates: the intended word is picked from the bar
 for 94.5% of the mistyped words, against 71.0%. Ghost text only extends what was typed, so it cannot correct. Next-word
 accuracy, typo results per domain, latency and training details are in the
-[model card](https://huggingface.co/ScarletKc/Typeling-25M) and [docs/model-plan.md](docs/model-plan.md).
+[model card](https://huggingface.co/ScarletKc/Typeling-25M) and
+[docs/model-plan.md](https://github.com/scarletkc/typeling/blob/master/docs/model-plan.md).
 
 **The n-gram kernel** on the dev split, bundled 5.00 MB model, default thresholds (next word 0.3, completion 0.3),
 20,000 target words per source (oasst2: all 9,251), measured with `python bench/eval.py`:
@@ -249,6 +253,8 @@ docs/model-plan.md     plan and results for Typeling-25M
 
 ## License
 
-The code is licensed under the [Apache License 2.0](LICENSE). The bundled model `typeling/en.bin` is licensed
-under the [Open Data Commons Attribution License (ODC-By) 1.0](https://opendatacommons.org/licenses/by/1-0/), and
-Typeling-25M under the Apache License 2.0; see [NOTICE](NOTICE) for the required attributions.
+The code is licensed under the [Apache License 2.0](https://github.com/scarletkc/typeling/blob/master/LICENSE). The
+bundled model `typeling/en.bin` is licensed under the
+[Open Data Commons Attribution License (ODC-By) 1.0](https://opendatacommons.org/licenses/by/1-0/), and Typeling-25M
+under the Apache License 2.0; see [NOTICE](https://github.com/scarletkc/typeling/blob/master/NOTICE) for the required
+attributions.

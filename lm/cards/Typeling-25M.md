@@ -143,8 +143,12 @@ tokens/s for prompts and 2,800 tokens/s for single-token steps on the same 4 thr
 | [OpenAssistant oasst2](https://huggingface.co/datasets/OpenAssistant/oasst2) (user turns) | Apache-2.0 | 0.4M | 1% |
 
 A 40M-token fine-tuning run on synthetic typos was also tried. Decoded in its own typed mode, it was worse than this
-model with typo repair in the decoder on both clean and mistyped text, so this model does not include it. The full plan, experiments and results are in
-[docs/model-plan.md](https://github.com/scarletkc/typeling/blob/master/docs/model-plan.md).
+model with typo repair in the decoder on both clean and mistyped text, so this model does not include it.
+
+The [technical report](https://github.com/scarletkc/typeling/releases/download/v0.1.1/typeling-technical-report.pdf)
+(PDF) describes the model, the decoder and the results;
+[docs/model-plan.md](https://github.com/scarletkc/typeling/blob/master/docs/model-plan.md) records the plan and every
+experiment.
 
 ## Intended use and limitations
 
